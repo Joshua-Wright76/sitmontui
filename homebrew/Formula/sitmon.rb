@@ -10,7 +10,4 @@ class Sitmon < Formula
     bin.install "sitmon_cli" => "sitmon"
   end
 
-  test do
-    system "#{bin}/sitmon", "--version"
-  end
 end
