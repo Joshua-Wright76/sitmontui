@@ -74,39 +74,38 @@ jobs:
           ARM64_SHA: ${{ steps.shasum.outputs.arm64_sha }}
           X86_SHA: ${{ steps.shasum.outputs.x86_sha }}
         run: |
-          git clone https://x-access-token:${GITHUB_TOKEN}@github.com/Joshua-Wright76/sitmontui-brew.git ../sitmontui-brew
-
-          cat > ../sitmontui-brew/Formula/sitmon.rb << 'RUBY'
-          class Sitmon < Formula
-            desc "Rust TUI situation monitor"
-            homepage "https://github.com/Joshua-Wright76/sitmontui"
-            license "MIT"
-            head "https://github.com/Joshua-Wright76/sitmontui.git"
+          FORMULA_CONTENT="class Sitmon < Formula
+            desc \"Rust TUI situation monitor\"
+            homepage \"https://github.com/Joshua-Wright76/sitmontui\"
+            license \"MIT\"
+            head \"https://github.com/Joshua-Wright76/sitmontui.git\"
 
             on_macos do
               on_arm do
-                url "https://github.com/Joshua-Wright76/sitmontui/releases/download/v#{ENV['TAG_VERSION']}/sitmon_cli"
-                sha256 "#{ENV['ARM64_SHA']}"
+                url \"https://github.com/Joshua-Wright76/sitmontui/releases/download/v${TAG_VERSION}/sitmon_cli\"
+                sha256 \"${ARM64_SHA}\"
               end
               on_intel do
-                url "https://github.com/Joshua-Wright76/sitmontui/releases/download/v#{ENV['TAG_VERSION']}/sitmon_cli-x86_64-apple-darwin"
-                sha256 "#{ENV['X86_SHA']}"
+                url \"https://github.com/Joshua-Wright76/sitmontui/releases/download/v${TAG_VERSION}/sitmon_cli-x86_64-apple-darwin\"
+                sha256 \"${X86_SHA}\"
               end
             end
 
             def install
-              bin.install "sitmon_cli" => "sitmon"
+              bin.install \"sitmon_cli\" => \"sitmon\"
             end
 
             test do
-              system "#{bin}/sitmon", "--help"
+              system \"#{bin}/sitmon\", \"--help\"
             end
-          end
-          RUBY
+          end"
 
-          cd ../sitmontui-brew
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          git add Formula/sitmon.rb
-          git commit -m "Update sitmon to v${TAG_VERSION}"
-          git push
+          FORMULA_B64=$(echo "$FORMULA_CONTENT" | base64 -w0)
+          CURRENT_SHA=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            https://api.github.com/repos/Joshua-Wright76/sitmontui-brew/contents/Formula/sitmon.rb | jq -r .sha)
+
+          curl -s -X PUT \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Content-Type: application/json" \
+            https://api.github.com/repos/Joshua-Wright76/sitmontui-brew/contents/Formula%2Fsitmon.rb \
+            -d "{\"message\":\"Update sitmon to ${TAG_VERSION}\",\"content\":\"${FORMULA_B64}\",\"sha\":\"${CURRENT_SHA}\"}"
