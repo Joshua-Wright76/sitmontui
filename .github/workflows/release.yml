@@ -68,10 +68,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Update Homebrew Tap
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_VERSION: ${{ github.ref_name }}
+          ARM64_SHA: ${{ steps.shasum.outputs.arm64_sha }}
+          X86_SHA: ${{ steps.shasum.outputs.x86_sha }}
         run: |
-          TAG_VERSION=${GITHUB_REF#refs/tags/v}
-
-          git clone https://github.com/Joshua-Wright76/sitmontui-brew.git ../sitmontui-brew
+          git clone https://x-access-token:${GITHUB_TOKEN}@github.com/Joshua-Wright76/sitmontui-brew.git ../sitmontui-brew
 
           cat > ../sitmontui-brew/Formula/sitmon.rb << 'RUBY'
           class Sitmon < Formula
@@ -82,12 +85,12 @@ jobs:
 
             on_macos do
               on_arm do
-                url "https://github.com/Joshua-Wright76/sitmontui/releases/download/v#{TAG_VERSION}/sitmon_cli"
-                sha256 "${{ steps.shasum.outputs.arm64_sha }}"
+                url "https://github.com/Joshua-Wright76/sitmontui/releases/download/v#{ENV['TAG_VERSION']}/sitmon_cli"
+                sha256 "#{ENV['ARM64_SHA']}"
               end
               on_intel do
-                url "https://github.com/Joshua-Wright76/sitmontui/releases/download/v#{TAG_VERSION}/sitmon_cli-x86_64-apple-darwin"
-                sha256 "${{ steps.shasum.outputs.x86_sha }}"
+                url "https://github.com/Joshua-Wright76/sitmontui/releases/download/v#{ENV['TAG_VERSION']}/sitmon_cli-x86_64-apple-darwin"
+                sha256 "#{ENV['X86_SHA']}"
               end
             end
 
