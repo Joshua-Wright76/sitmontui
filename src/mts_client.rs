@@ -155,7 +155,6 @@ impl MtsProvider {
 
         let objects = mts_events
             .into_iter()
-            .filter(|e| e.is_active)
             .map(|e| {
                 let title = format_title(&e);
                 MapObject {
@@ -179,6 +178,7 @@ impl MtsProvider {
                         source_types: Some(e.source_types),
                         created_at: Some(e.created_at),
                         updated_at: Some(e.updated_at),
+                        is_active: Some(e.is_active),
                         ..Default::default()
                     },
                 }

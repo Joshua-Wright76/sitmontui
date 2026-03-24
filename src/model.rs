@@ -274,6 +274,28 @@ pub struct ObjectMetadata {
     pub aircraft_type: Option<String>,
     pub callsign: Option<String>,
     pub signals: Option<Vec<Signal>>,
+    pub is_active: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FilterKind {
+    FeedLive,
+    FeedReports,
+}
+
+impl FilterKind {
+    pub fn label(&self) -> &'static str {
+        match self {
+            FilterKind::FeedLive => "Live",
+            FilterKind::FeedReports => "Reports",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct FeedFilters {
+    pub show_live: bool,
+    pub show_reports: bool,
 }
 
 impl MapObject {

@@ -40,6 +40,10 @@ pub fn draw(frame: &mut Frame<'_>, app: &mut App) {
     if app.is_searching {
         render_search_panel(frame, app);
     }
+
+    if app.filter_panel_open {
+        render_filter_popup(frame, chunks[0], app);
+    }
 }
 
 fn render_feed(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject]) {
@@ -800,8 +804,12 @@ fn render_status(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObj
         PaneFocus::Warships => "ACTIVE PANE: WARSHIPS  |  j/k move selection  |  h/l move focus",
         PaneFocus::Leaders => "ACTIVE PANE: LEADERS  |  j/k move selection  |  h/l move focus",
     };
-    let nav_keys =
-        "/: search | ENTER: toggle details | 1-4: severity filters | g: refresh | q: quit";
+
+    let nav_keys = if app.filter_panel_open {
+        "f: close | j/k: move | ENTER: toggle"
+    } else {
+        "/: search | f: filters | ENTER: details | 1-4: severity | g: refresh | q: quit"
+    };
 
     let lines = vec![
         Line::from(vec![
@@ -859,6 +867,75 @@ fn render_layer_popup(frame: &mut Frame<'_>, app: &App) {
                 .title("Layer Panel")
                 .borders(Borders::ALL)
                 .style(Style::default().bg(Color::Rgb(10, 14, 24))),
+        )
+        .wrap(Wrap { trim: true });
+    frame.render_widget(Clear, popup);
+    frame.render_widget(widget, popup);
+}
+
+fn column_rect(area: Rect, index: usize) -> Rect {
+    let col_width = area.width / 3;
+    Rect {
+        x: area.x + (index as u16) * col_width,
+        y: area.y,
+        width: col_width,
+        height: area.height,
+    }
+}
+
+fn render_filter_popup(frame: &mut Frame<'_>, area: Rect, app: &App) {
+    let col_index = match app.focus {
+        PaneFocus::Feed => 0,
+        PaneFocus::Warships => 1,
+        PaneFocus::Leaders => 2,
+    };
+    let col = column_rect(area, col_index);
+
+    let filter_count = app.filter_count();
+    if filter_count == 0 {
+        return;
+    }
+
+    let popup_w = 28.min(col.width.saturating_sub(2));
+    let popup_h = ((filter_count + 4) as u16).min(col.height.saturating_sub(2));
+
+    let popup = Rect {
+        x: col.x + (col.width - popup_w) / 2,
+        y: col.y + (col.height - popup_h) / 2,
+        width: popup_w,
+        height: popup_h,
+    };
+
+    let mut lines = Vec::new();
+    lines.push(Line::from(Span::styled(
+        "Filters",
+        Style::default().add_modifier(Modifier::BOLD),
+    )));
+    lines.push(Line::from(""));
+
+    let filters: Vec<(&str, bool)> = match app.focus {
+        PaneFocus::Feed => vec![
+            ("Live", app.feed_filters.show_live),
+            ("Reports", app.feed_filters.show_reports),
+        ],
+        _ => vec![],
+    };
+
+    for (idx, (label, enabled)) in filters.iter().enumerate() {
+        let cursor = if idx == app.filter_selection_idx {
+            ">"
+        } else {
+            " "
+        };
+        let mark = if *enabled { "[●]" } else { "[○]" };
+        lines.push(Line::from(format!("{} {} {}", cursor, mark, label)));
+    }
+
+    let widget = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .title(format!("{:?} FILTERS", app.focus).to_uppercase())
+                .borders(Borders::ALL),
         )
         .wrap(Wrap { trim: true });
     frame.render_widget(Clear, popup);

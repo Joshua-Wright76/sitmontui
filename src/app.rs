@@ -5,7 +5,7 @@ use std::time::{Duration, Instant, SystemTime};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::data::{DataProvider, Snapshot};
-use crate::model::{MapObject, Severity, Signal, Warship, WorldLeader};
+use crate::model::{FeedFilters, MapObject, Severity, Signal, Warship, WorldLeader};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SearchMode {
@@ -118,6 +118,9 @@ pub struct App {
     pub search_query: String,
     pub search_selected_idx: usize,
     pub search_results: Vec<SearchResult>,
+    pub filter_panel_open: bool,
+    pub filter_selection_idx: usize,
+    pub feed_filters: FeedFilters,
 }
 
 impl App {
@@ -159,6 +162,12 @@ impl App {
             search_query: String::new(),
             search_selected_idx: 0,
             search_results: Vec::new(),
+            filter_panel_open: false,
+            filter_selection_idx: 0,
+            feed_filters: FeedFilters {
+                show_live: true,
+                show_reports: false,
+            },
         };
 
         // Initial cache build
@@ -174,7 +183,12 @@ impl App {
             for event in &self.snapshot.events {
                 if let Some(severity) = event.severity {
                     if self.severity_filter[severity.index()] {
-                        out.push(event.clone());
+                        let is_active = event.metadata.is_active.unwrap_or(true);
+                        let show = (is_active && self.feed_filters.show_live)
+                            || (!is_active && self.feed_filters.show_reports);
+                        if show {
+                            out.push(event.clone());
+                        }
                     }
                 }
             }
@@ -495,6 +509,11 @@ impl App {
             return;
         }
 
+        if self.filter_panel_open {
+            self.handle_filter_panel_key(key);
+            return;
+        }
+
         match key.code {
             KeyCode::Char('q') => self.quit = true,
             KeyCode::Esc => {
@@ -506,6 +525,14 @@ impl App {
             KeyCode::Char('t') => {
                 self.layer_panel_open = true;
                 self.status = String::from("layer panel opened");
+            }
+            KeyCode::Char('f') => {
+                self.toggle_filter_panel();
+                if self.filter_panel_open {
+                    self.status = String::from("filter panel opened");
+                } else {
+                    self.status = String::from("filter panel closed");
+                }
             }
             KeyCode::Char('1') => self.toggle_severity(Severity::Low),
             KeyCode::Char('2') => self.toggle_severity(Severity::Medium),
@@ -668,6 +695,34 @@ impl App {
         }
     }
 
+    fn handle_filter_panel_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('f') => {
+                self.filter_panel_open = false;
+                self.status = String::from("filter panel closed");
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.move_filter_selection(1);
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.move_filter_selection(-1);
+            }
+            KeyCode::Enter | KeyCode::Char(' ') => {
+                self.toggle_current_filter();
+                let (_kind, label, enabled) = match self.focus {
+                    PaneFocus::Feed => match self.filter_selection_idx {
+                        0 => ("live", "Live", self.feed_filters.show_live),
+                        1 => ("reports", "Reports", self.feed_filters.show_reports),
+                        _ => return,
+                    },
+                    _ => return,
+                };
+                self.status = format!("{}: {}", label, if enabled { "on" } else { "off" });
+            }
+            _ => {}
+        }
+    }
+
     pub fn layer_visible(&self, id: LayerId) -> bool {
         self.layers
             .iter()
@@ -748,5 +803,47 @@ impl App {
         );
         self.selected_idx = 0;
         self.expanded_idx = None;
+    }
+
+    pub fn filter_count(&self) -> usize {
+        match self.focus {
+            PaneFocus::Feed => 2,
+            PaneFocus::Warships | PaneFocus::Leaders => 0,
+        }
+    }
+
+    pub fn toggle_filter_panel(&mut self) {
+        if self.filter_count() > 0 {
+            self.filter_panel_open = !self.filter_panel_open;
+            self.filter_selection_idx = 0;
+        }
+    }
+
+    pub fn toggle_current_filter(&mut self) {
+        if !self.filter_panel_open {
+            return;
+        }
+        match self.focus {
+            PaneFocus::Feed => {
+                match self.filter_selection_idx {
+                    0 => self.feed_filters.show_live = !self.feed_filters.show_live,
+                    1 => self.feed_filters.show_reports = !self.feed_filters.show_reports,
+                    _ => {}
+                }
+                self.invalidate_cache();
+                self.selected_idx = 0;
+                self.expanded_idx = None;
+            }
+            PaneFocus::Warships | PaneFocus::Leaders => {}
+        }
+    }
+
+    pub fn move_filter_selection(&mut self, delta: isize) {
+        let count = self.filter_count();
+        if count == 0 {
+            return;
+        }
+        let new_idx = (self.filter_selection_idx as isize + delta).rem_euclid(count as isize);
+        self.filter_selection_idx = new_idx as usize;
     }
 }
