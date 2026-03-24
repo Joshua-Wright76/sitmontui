@@ -6,24 +6,48 @@ on:
       - 'v*'
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  build:
+    strategy:
+      matrix:
+        include:
+          - runner: macos-latest
+            target: aarch64-apple-darwin
+            binary_name: sitmon_cli
+          - runner: macos-13
+            target: x86_64-apple-darwin
+            binary_name: sitmon_cli-x86_64-apple-darwin
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install cross
-        run: cargo install cross
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Build arm64 binary
-        run: |
-          cross build --release --target aarch64-apple-darwin
-          cp target/aarch64-apple-darwin/release/sitmon_cli sitmon_cli
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Build x86_64 binary
-        run: |
-          cross build --release --target x86_64-apple-darwin
-          cp target/x86_64-apple-darwin/release/sitmon_cli sitmon_cli-x86_64-apple-darwin
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.binary_name }}
+          path: target/${{ matrix.target }}/release/sitmon_cli
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download arm64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sitmon_cli
+          path: .
+
+      - name: Download x86_64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sitmon_cli-x86_64-apple-darwin
+          path: .
 
       - name: Calculate shasums
         id: shasum
