@@ -101,10 +101,10 @@ jobs:
           end"
 
           FORMULA_B64=$(echo "$FORMULA_CONTENT" | base64 -w0)
-          CURRENT_SHA=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+          CURRENT_SHA=$(curl -sL -H "Authorization: token $GITHUB_TOKEN" \
             https://api.github.com/repos/Joshua-Wright76/sitmontui-brew/contents/Formula/sitmon.rb | jq -r .sha)
 
-          curl -s -X PUT \
+          curl -sL -X PUT \
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Content-Type: application/json" \
             https://api.github.com/repos/Joshua-Wright76/sitmontui-brew/contents/Formula%2Fsitmon.rb \
