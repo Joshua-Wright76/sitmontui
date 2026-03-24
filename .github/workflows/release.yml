@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install cross
+        run: cargo install cross
+
+      - name: Build arm64 binary
+        run: |
+          cross build --release --target aarch64-apple-darwin
+          cp target/aarch64-apple-darwin/release/sitmon_cli sitmon_cli
+
+      - name: Build x86_64 binary
+        run: |
+          cross build --release --target x86_64-apple-darwin
+          cp target/x86_64-apple-darwin/release/sitmon_cli sitmon_cli-x86_64-apple-darwin
+
+      - name: Calculate shasums
+        id: shasum
+        run: |
+          ARM64_SHA=$(shasum -a 256 sitmon_cli | awk '{print $1}')
+          X86_SHA=$(shasum -a 256 sitmon_cli-x86_64-apple-darwin | awk '{print $1}')
+          echo "arm64_sha=$ARM64_SHA" >> $GITHUB_OUTPUT
+          echo "x86_sha=$X86_SHA" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            sitmon_cli
+            sitmon_cli-x86_64-apple-darwin
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Homebrew Tap
+        run: |
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+
+          git clone https://github.com/Joshua-Wright76/sitmontui-brew.git ../sitmontui-brew
+
+          cat > ../sitmontui-brew/Formula/sitmon.rb << 'RUBY'
+          class Sitmon < Formula
+            desc "Rust TUI situation monitor"
+            homepage "https://github.com/Joshua-Wright76/sitmontui"
+            license "MIT"
+            head "https://github.com/Joshua-Wright76/sitmontui.git"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/Joshua-Wright76/sitmontui/releases/download/v#{TAG_VERSION}/sitmon_cli"
+                sha256 "${{ steps.shasum.outputs.arm64_sha }}"
+              end
+              on_intel do
+                url "https://github.com/Joshua-Wright76/sitmontui/releases/download/v#{TAG_VERSION}/sitmon_cli-x86_64-apple-darwin"
+                sha256 "${{ steps.shasum.outputs.x86_sha }}"
+              end
+            end
+
+            def install
+              bin.install "sitmon_cli" => "sitmon"
+            end
+
+            test do
+              system "#{bin}/sitmon", "--help"
+            end
+          end
+          RUBY
+
+          cd ../sitmontui-brew
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add Formula/sitmon.rb
+          git commit -m "Update sitmon to v${TAG_VERSION}"
+          git push
