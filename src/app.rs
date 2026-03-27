@@ -5,6 +5,7 @@ use std::time::{Duration, Instant, SystemTime};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::data::{DataProvider, Snapshot};
+use crate::market_ticker::MarketTicker;
 use crate::model::{FeedFilters, MapObject, Severity, Signal, Warship, WorldLeader};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -121,6 +122,8 @@ pub struct App {
     pub filter_panel_open: bool,
     pub filter_selection_idx: usize,
     pub feed_filters: FeedFilters,
+    // Market ticker
+    pub market_ticker: Arc<Mutex<MarketTicker>>,
 }
 
 impl App {
@@ -168,6 +171,7 @@ impl App {
                 show_live: true,
                 show_reports: false,
             },
+            market_ticker: Arc::new(Mutex::new(MarketTicker::new())),
         };
 
         // Initial cache build

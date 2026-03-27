@@ -1,10 +1,11 @@
 pub mod app;
 pub mod data;
+pub mod market_ticker;
 pub mod model;
 pub mod mts_client;
 pub mod ui;
 
-use std::{io, time::Duration};
+use std::{io, sync::Arc, time::Duration};
 
 use anyhow::Result;
 use crossterm::{
@@ -14,13 +15,35 @@ use crossterm::{
 };
 use ratatui::{prelude::CrosstermBackend, Terminal};
 
-use crate::{app::App, data::DataProvider};
+use crate::{app::App, data::DataProvider, market_ticker::MarketTicker};
 
 fn main() -> Result<()> {
     dotenvy::dotenv().ok();
 
     let provider = data::build_provider_from_env();
     let mut app = App::new(vec![()], provider.as_ref());
+
+    let market_ticker = Arc::clone(&app.market_ticker);
+    std::thread::spawn(move || {
+        let mut ticker = MarketTicker::new();
+        loop {
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            match ticker.fetch_quotes(now_ms) {
+                Ok(()) => {
+                    if let Ok(mut guard) = market_ticker.lock() {
+                        *guard = ticker.clone();
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Market ticker error: {}", e);
+                }
+            }
+            std::thread::sleep(Duration::from_secs(300));
+        }
+    });
 
     setup_terminal()?;
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
@@ -37,7 +60,17 @@ fn run_app(
     provider: &dyn DataProvider,
 ) -> Result<()> {
     while !app.quit {
-        terminal.draw(|f| ui::draw(f, app))?;
+        let ticker_data = {
+            let mut ticker = app.market_ticker.lock().unwrap();
+            ticker.maybe_scroll(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64,
+            );
+            ticker.clone()
+        };
+        terminal.draw(|f| ui::draw(f, app, &ticker_data))?;
 
         if event::poll(app.tick_rate)? {
             if let Event::Key(key) = event::read()? {

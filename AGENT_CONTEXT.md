@@ -618,3 +618,94 @@ cargo test --test e2e -- --test-threads=1
 - `src/ui.rs` - Updated status bar for search UI, filtered warships/leaders rendering
 
 ---
+
+### March 27, 2026 - Live Market Ticker
+
+✅ **Added live market ticker bar at top of screen**
+- **Data Source**: Yahoo Finance public API (no API key required)
+- **Symbols Tracked**:
+  - Commodities: Gold (GC=F), Silver (SI=F), WTI Oil (CL=F), Brent (BZ=F), Natural Gas (NG=F)
+  - Indices: S&P 500 (^GSPC), Dow Jones (^DJI)
+  - Treasury Yields: 10Y (^TNX), 30Y (^TYX)
+- **Update Frequency**: Background thread fetches every 60 seconds
+- **Display Format**: `▲ Gold: 2945.30 (+0.42%) | ▼ WTI Oil: 74.52 (-1.2%) | ...`
+- **UI**: Single-line ticker bar at very top of screen, dark background
+
+**Implementation:**
+- Created `src/market_ticker.rs` - Direct HTTP client using Yahoo Finance v8 API
+- Used `reqwest` with `blocking` feature for synchronous HTTP requests
+- Background thread spawns on startup, updates shared `Arc<Mutex<MarketTicker>>`
+- UI thread clones ticker data and passes to render function
+
+**Files Changed:**
+- `Cargo.toml` - Added reqwest with blocking, json, rustls-tls features
+- `src/market_ticker.rs` (new) - MarketTicker struct, fetch_quotes(), format_for_display(), maybe_scroll()
+- `src/app.rs` - Added market_ticker: Arc<Mutex<MarketTicker>> field
+- `src/lib.rs` - Added market_ticker module
+- `src/ui.rs` - Added render_ticker(), modified layout to 3 vertical sections
+- `src/main.rs` - Spawn background thread for ticker updates
+
+**API Used:**
+- Yahoo Finance Chart API: `https://query1.finance.yahoo.com/v8/finance/chart/{symbol}`
+- No API key required - public endpoint
+- Returns: regularMarketPrice, previousClose for calculating change %
+
+**Limitations:**
+- Data may be delayed 15+ minutes from market close
+- Rate limited by Yahoo Finance (should be fine for 1 req/min)
+- No WebSocket streaming - polling every 60 seconds is sufficient for ticker
+
+---
+
+### March 27, 2026 - Scrolling Ticker Display
+
+✅ **Ticker now scrolls horizontally like a TV stock ticker**
+
+**Changes:**
+- Added `scroll_offset` and `last_scroll_ms` fields to `MarketTicker`
+- Added `maybe_scroll()` method - advances scroll by 1 character every 1 second
+- Added `get_scrolling_text()` method - returns base text for scrolling
+- Modified `render_ticker()` to extract visible portion based on scroll position
+- Seamless looping: text repeats with `   |   ` separator
+- Changed background to transparent (removed dark background styling)
+
+**Files Changed:**
+- `src/market_ticker.rs` - Added scroll state and maybe_scroll(), get_scrolling_text()
+- `src/ui.rs` - Updated render_ticker() for scrolling, changed to transparent background
+- `src/main.rs` - Pass `&mut MarketTicker` to draw() for scroll state updates
+
+---
+
+### March 27, 2026 - Multi-Timeframe Scrolling Ticker
+
+✅ **Major ticker overhaul: 4 timeframes, 3 rows, colored percentages, bidirectional scrolling**
+
+**New Features:**
+- **4 Timeframes per item**: 1h, 24h, 1w, 1m percentage changes
+- **3-Line Ticker**: 
+  - Line 1 (Commodities): Gold, Silver, WTI Oil, Brent, Nat Gas, Bitcoin, Ethereum
+  - Line 2 (Indices): S&P 500, Dow Jones, 10Y Treasury, 30Y Treasury
+  - Line 3 (Forex): USD/EUR, USD/JPY, USD/CNY, USD/RUB, USD/INR
+- **Color-coded percentages**: Green for positive, Red for negative (just percentages, not names/prices)
+- **5-Minute Refresh**: Data fetched every 5 minutes
+- **Bidirectional Scrolling**: 
+  - Commodities & Forex: scroll right (forward)
+  - Indices: scroll left (backward)
+
+**Display Format:**
+```
+Line 1: Gold 2945 +0.42% +1.2% -1.3% -5.4%   |   Bitcoin 67250 +0.8% +2.1% +5.4% +12.3%   |   ...
+Line 2: S&P 500 5968 +0.15% +0.8% +2.1% +4.2%   |   Dow Jones 43210 +0.2% +0.9% +1.8% +3.5%   |   ...
+Line 3: USD/EUR 1.0850 +0.12% +0.45% +0.89% +1.23%   |   USD/JPY 149.50 -0.08% -0.32% -0.65% -1.10%   |   ...
+```
+
+**Implementation:**
+- Yahoo Finance `range=1h` for 1h change, `range=1d` for 24h, `range=1mo` for 1w and 1m
+- Bitcoin/Ethereum added to commodity symbols
+- Uses `wrapping_add(1)` for forward scroll, `wrapping_sub(1)` for backward scroll
+- `format_line_styled()` returns `Line` with `Span`s for color-coded percentages
+
+**Files Changed:**
+- `src/market_ticker.rs` - Added forex vector, Bitcoin/Ethereum symbols, bidirectional scroll with wrapping_add/wrapping_sub
+- `src/ui.rs` - Layout constraint changed to Length(3), render_ticker() renders 3 lines
+- `src/main.rs` - Refresh interval: 300s

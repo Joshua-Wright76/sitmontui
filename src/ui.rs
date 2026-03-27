@@ -8,14 +8,19 @@ use ratatui::{
 
 use crate::{
     app::{App, LayerId, PaneFocus, SearchMode, SearchResult},
+    market_ticker::MarketTicker,
     model::{MapObject, ObjectKind, Severity, Warship, WorldLeader},
 };
 
-pub fn draw(frame: &mut Frame<'_>, app: &mut App) {
+pub fn draw(frame: &mut Frame<'_>, app: &mut App, ticker: &MarketTicker) {
     let root = frame.area();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(4), Constraint::Length(6)])
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Min(4),
+            Constraint::Length(6),
+        ])
         .split(root);
 
     let body = Layout::default()
@@ -25,13 +30,14 @@ pub fn draw(frame: &mut Frame<'_>, app: &mut App) {
             Constraint::Percentage(34),
             Constraint::Percentage(33),
         ])
-        .split(chunks[0]);
+        .split(chunks[1]);
 
     let objects = app.visible_objects();
+    render_ticker(frame, chunks[0], ticker);
     render_feed(frame, body[0], app, objects);
     render_warships(frame, body[1], app);
     render_leaders(frame, body[2], app);
-    render_status(frame, chunks[1], app, objects);
+    render_status(frame, chunks[2], app, objects);
 
     if app.layer_panel_open {
         render_layer_popup(frame, app);
@@ -42,8 +48,50 @@ pub fn draw(frame: &mut Frame<'_>, app: &mut App) {
     }
 
     if app.filter_panel_open {
-        render_filter_popup(frame, chunks[0], app);
+        render_filter_popup(frame, chunks[1], app);
     }
+}
+
+fn render_ticker(frame: &mut Frame<'_>, area: Rect, ticker: &MarketTicker) {
+    let width = area.width as usize;
+
+    let commodities_line =
+        ticker.format_line_styled(&ticker.commodities, ticker.scroll_offset_commodities, width);
+    let paragraph1 = Paragraph::new(commodities_line);
+    frame.render_widget(
+        paragraph1,
+        Rect {
+            x: area.x,
+            y: area.y,
+            width: area.width,
+            height: 1,
+        },
+    );
+
+    let indices_line =
+        ticker.format_line_styled(&ticker.indices, ticker.scroll_offset_indices, width);
+    let paragraph2 = Paragraph::new(indices_line);
+    frame.render_widget(
+        paragraph2,
+        Rect {
+            x: area.x,
+            y: area.y + 1,
+            width: area.width,
+            height: 1,
+        },
+    );
+
+    let forex_line = ticker.format_line_styled(&ticker.forex, ticker.scroll_offset_forex, width);
+    let paragraph3 = Paragraph::new(forex_line);
+    frame.render_widget(
+        paragraph3,
+        Rect {
+            x: area.x,
+            y: area.y + 2,
+            width: area.width,
+            height: 1,
+        },
+    );
 }
 
 fn render_feed(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject]) {
