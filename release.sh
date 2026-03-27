@@ -36,9 +36,17 @@ esac
 NEW_VERSION="$MAJOR.$MINOR.$PATCH"
 echo "New version: $NEW_VERSION"
 
+# Setup rustup environment
+setup_rustup() {
+    if [ -f "$HOME/.cargo/env" ]; then
+        source "$HOME/.cargo/env"
+    fi
+}
+
 # Ensure x86_64 target is installed
 echo "Checking for rustup..."
 if command -v rustup &> /dev/null; then
+    setup_rustup
     echo "rustup found, adding x86_64-apple-darwin target..."
     rustup target add x86_64-apple-darwin
 elif command -v brew &> /dev/null; then
@@ -53,12 +61,12 @@ else
     exit 1
 fi
 
-# Build release binaries
+# Build release binaries (use rustup's cargo)
 echo "Building ARM64..."
-cargo build --release
+~/.cargo/bin/cargo build --release
 
 echo "Building x86_64..."
-cargo build --release --target x86_64-apple-darwin
+~/.cargo/bin/cargo build --release --target x86_64-apple-darwin
 
 # Copy binaries to release location with names
 mkdir -p release
