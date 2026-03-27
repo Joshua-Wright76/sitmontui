@@ -37,7 +37,21 @@ NEW_VERSION="$MAJOR.$MINOR.$PATCH"
 echo "New version: $NEW_VERSION"
 
 # Ensure x86_64 target is installed
-rustup target add x86_64-apple-darwin 2>/dev/null || true
+echo "Checking for rustup..."
+if command -v rustup &> /dev/null; then
+    echo "rustup found, adding x86_64-apple-darwin target..."
+    rustup target add x86_64-apple-darwin
+elif command -v brew &> /dev/null; then
+    echo "Installing rustup via Homebrew..."
+    brew install rustup-init
+    source "$HOME/.cargo/env"
+    rustup default stable
+    rustup target add x86_64-apple-darwin
+else
+    echo "ERROR: rustup not found and Homebrew not available."
+    echo "Please install rustup from https://rustup.rs or install Homebrew."
+    exit 1
+fi
 
 # Build release binaries
 echo "Building ARM64..."
