@@ -409,7 +409,9 @@ fn calculate_1h_change(timestamps: &[f64], quotes: &[f64], current_price: f64) -
 
     let one_hour_ago = now_secs - 3600.0;
 
-    for i in 0..timestamps.len() {
+    let min_len = timestamps.len().min(quotes.len());
+
+    for i in 0..min_len {
         if timestamps[i] >= one_hour_ago && i > 0 {
             let old_price = quotes[i - 1];
             if old_price > 0.0 {
@@ -418,8 +420,8 @@ fn calculate_1h_change(timestamps: &[f64], quotes: &[f64], current_price: f64) -
         }
     }
 
-    if timestamps.len() >= 2 {
-        let old_price = quotes[quotes.len() - 2];
+    if min_len >= 2 {
+        let old_price = quotes[min_len - 2];
         if old_price > 0.0 {
             return ((current_price - old_price) / old_price) * 100.0;
         }
@@ -440,7 +442,9 @@ fn calculate_24h_change(timestamps: &[f64], quotes: &[f64], current_price: f64) 
 
     let one_day_ago = now_secs - 86400.0;
 
-    for i in 0..timestamps.len() {
+    let min_len = timestamps.len().min(quotes.len());
+
+    for i in 0..min_len {
         if timestamps[i] >= one_day_ago && i > 0 {
             let old_price = quotes[i - 1];
             if old_price > 0.0 {
@@ -449,7 +453,7 @@ fn calculate_24h_change(timestamps: &[f64], quotes: &[f64], current_price: f64) 
         }
     }
 
-    if quotes.len() >= 2 {
+    if min_len >= 2 {
         let old_price = quotes[0];
         if old_price > 0.0 {
             return ((current_price - old_price) / old_price) * 100.0;
@@ -479,18 +483,20 @@ fn calculate_weekly_monthly_change(
     let mut week_price = current_price;
     let mut month_price = current_price;
 
-    for i in 0..timestamps.len() {
+    let min_len = timestamps.len().min(quotes.len());
+
+    for i in 0..min_len {
         if timestamps[i] >= one_week_ago && i > 0 {
             week_price = quotes[i - 1];
             break;
         }
     }
 
-    if week_price == current_price && quotes.len() >= 7 {
-        week_price = quotes[quotes.len() - 7];
+    if week_price == current_price && min_len >= 7 {
+        week_price = quotes[min_len - 7];
     }
 
-    for i in 0..timestamps.len() {
+    for i in 0..min_len {
         if timestamps[i] >= one_month_ago && i > 0 {
             month_price = quotes[i - 1];
             break;
