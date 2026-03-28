@@ -168,6 +168,7 @@ impl MarketTicker {
         items: &[MarketItem],
         scroll_offset: usize,
         width: usize,
+        name_color: Option<ratatui::style::Color>,
     ) -> ratatui::text::Line<'static> {
         use ratatui::style::Color;
         use ratatui::text::Span;
@@ -193,7 +194,7 @@ impl MarketTicker {
 
             styled_spans.push(StyledSpan {
                 text: format!("{} ", item.name),
-                color: None,
+                color: name_color,
             });
             styled_spans.push(StyledSpan {
                 text: format!("{} ", price_str),

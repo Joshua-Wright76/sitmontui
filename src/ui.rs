@@ -1,8 +1,12 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
+    symbols::Marker,
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph, Wrap},
+    widgets::{
+        canvas::{Canvas, Points},
+        Block, Borders, Clear, Paragraph, Wrap,
+    },
     Frame,
 };
 
@@ -23,20 +27,34 @@ pub fn draw(frame: &mut Frame<'_>, app: &mut App, ticker: &MarketTicker) {
         ])
         .split(root);
 
-    let body = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(33),
-            Constraint::Percentage(34),
-            Constraint::Percentage(33),
-        ])
-        .split(chunks[1]);
-
     let objects = app.visible_objects();
     render_ticker(frame, chunks[0], ticker);
-    render_feed(frame, body[0], app, objects);
-    render_warships(frame, body[1], app);
-    render_leaders(frame, body[2], app);
+
+    if app.is_map_view {
+        // Map view: feed on left (33%), map on right (67%)
+        let body = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(33), Constraint::Percentage(67)])
+            .split(chunks[1]);
+
+        render_feed(frame, body[0], app, objects);
+        render_map(frame, body[1], app, objects);
+    } else {
+        // Normal view: three columns
+        let body = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(33),
+                Constraint::Percentage(34),
+                Constraint::Percentage(33),
+            ])
+            .split(chunks[1]);
+
+        render_feed(frame, body[0], app, objects);
+        render_warships(frame, body[1], app);
+        render_leaders(frame, body[2], app);
+    }
+
     render_status(frame, chunks[2], app, objects);
 
     if app.layer_panel_open {
@@ -55,8 +73,13 @@ pub fn draw(frame: &mut Frame<'_>, app: &mut App, ticker: &MarketTicker) {
 fn render_ticker(frame: &mut Frame<'_>, area: Rect, ticker: &MarketTicker) {
     let width = area.width as usize;
 
-    let commodities_line =
-        ticker.format_line_styled(&ticker.commodities, ticker.scroll_offset_commodities, width);
+    // Commodities: gold color
+    let commodities_line = ticker.format_line_styled(
+        &ticker.commodities,
+        ticker.scroll_offset_commodities,
+        width,
+        Some(Color::Rgb(255, 215, 0)),
+    );
     let paragraph1 = Paragraph::new(commodities_line);
     frame.render_widget(
         paragraph1,
@@ -68,8 +91,13 @@ fn render_ticker(frame: &mut Frame<'_>, area: Rect, ticker: &MarketTicker) {
         },
     );
 
-    let indices_line =
-        ticker.format_line_styled(&ticker.indices, ticker.scroll_offset_indices, width);
+    // Indices/Stocks: cyan color
+    let indices_line = ticker.format_line_styled(
+        &ticker.indices,
+        ticker.scroll_offset_indices,
+        width,
+        Some(Color::Cyan),
+    );
     let paragraph2 = Paragraph::new(indices_line);
     frame.render_widget(
         paragraph2,
@@ -81,7 +109,13 @@ fn render_ticker(frame: &mut Frame<'_>, area: Rect, ticker: &MarketTicker) {
         },
     );
 
-    let forex_line = ticker.format_line_styled(&ticker.forex, ticker.scroll_offset_forex, width);
+    // Forex/Currencies: light green color
+    let forex_line = ticker.format_line_styled(
+        &ticker.forex,
+        ticker.scroll_offset_forex,
+        width,
+        Some(Color::Rgb(144, 238, 144)),
+    );
     let paragraph3 = Paragraph::new(forex_line);
     frame.render_widget(
         paragraph3,
@@ -92,6 +126,357 @@ fn render_ticker(frame: &mut Frame<'_>, area: Rect, ticker: &MarketTicker) {
             height: 1,
         },
     );
+}
+
+fn render_map(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject]) {
+    // Collect points for each category
+    let mut event_points: Vec<(f64, f64)> = Vec::new();
+    let mut warship_points: Vec<(f64, f64)> = Vec::new();
+    let mut leader_points: Vec<(f64, f64)> = Vec::new();
+    let mut selected_point: Option<(f64, f64)> = None;
+    let mut selected_event_info: Option<(&str, &str, f64, f64)> = None;
+
+    // Collect event points from visible objects
+    for (idx, obj) in objects.iter().enumerate() {
+        let is_selected = idx == app.selected_idx && app.focus == PaneFocus::Feed;
+        if is_selected {
+            selected_point = Some((obj.lng, obj.lat));
+            selected_event_info = Some((
+                &obj.label,
+                obj.metadata.location.as_deref().unwrap_or("Unknown"),
+                obj.lat,
+                obj.lng,
+            ));
+        } else {
+            event_points.push((obj.lng, obj.lat));
+        }
+    }
+
+    // Collect warship points
+    for (idx, ship) in app.filtered_warships().iter().enumerate() {
+        let is_selected = idx == app.selected_idx_warships && app.focus == PaneFocus::Warships;
+        if is_selected {
+            selected_point = Some((ship.lng, ship.lat));
+        } else {
+            warship_points.push((ship.lng, ship.lat));
+        }
+    }
+
+    // Collect leader points
+    for (idx, leader) in app.filtered_leaders().iter().enumerate() {
+        let is_selected = idx == app.selected_idx_leaders && app.focus == PaneFocus::Leaders;
+        if is_selected {
+            selected_point = Some((leader.lng, leader.lat));
+        } else {
+            leader_points.push((leader.lng, leader.lat));
+        }
+    }
+
+    // Determine map center based on selected event (only when Feed is focused)
+    let (center_lng, center_lat) = if app.focus == PaneFocus::Feed {
+        app.selected_object()
+            .filter(|obj| obj.lat != 0.0 && obj.lng != 0.0)
+            .map(|obj| (obj.lng, obj.lat))
+            .unwrap_or((20.0, 30.0)) // Default: Middle East
+    } else {
+        (20.0, 30.0) // Default: Middle East
+    };
+
+    // Calculate bounds with ~12.5% zoom (45° x 22.5° view), clamped to world edges
+    let min_lng = (center_lng - 22.5).max(-180.0);
+    let max_lng = (center_lng + 22.5).min(180.0);
+    let min_lat = (center_lat - 11.25).max(-90.0);
+    let max_lat = (center_lat + 11.25).min(90.0);
+
+    let canvas = Canvas::default()
+        .x_bounds([min_lng, max_lng])
+        .y_bounds([min_lat, max_lat])
+        .marker(Marker::Dot)
+        .paint(|ctx| {
+            // Draw high-resolution coastlines from Natural Earth data
+            draw_coastlines(ctx, min_lng, max_lng, min_lat, max_lat);
+
+            // Draw latitude/longitude grid lines
+            draw_grid_lines(ctx, min_lng, max_lng, min_lat, max_lat);
+
+            // Draw event points (bright yellow)
+            if !event_points.is_empty() {
+                ctx.draw(&Points {
+                    coords: &event_points,
+                    color: Color::Rgb(255, 255, 0),
+                });
+            }
+
+            // Draw warship points (bright cyan)
+            if !warship_points.is_empty() {
+                ctx.draw(&Points {
+                    coords: &warship_points,
+                    color: Color::Rgb(0, 255, 255),
+                });
+            }
+
+            // Draw leader points (bright magenta)
+            if !leader_points.is_empty() {
+                ctx.draw(&Points {
+                    coords: &leader_points,
+                    color: Color::Rgb(255, 0, 255),
+                });
+            }
+
+            // Draw selected point in bright white (larger)
+            if let Some((lng, lat)) = selected_point {
+                ctx.draw(&Points {
+                    coords: &[(lng, lat)],
+                    color: Color::White,
+                });
+            }
+        })
+        .block(Block::default().title("World Map").borders(Borders::ALL));
+
+    frame.render_widget(canvas, area);
+
+    // Draw mini map in top-right corner
+    render_mini_map(frame, area, min_lng, max_lng, min_lat, max_lat);
+
+    // Draw selected event label in bottom-right
+    if let Some((label, location, lat, lng)) = selected_event_info {
+        render_event_label(frame, area, label, location, lat, lng);
+    }
+}
+
+/// Draw simplified country borders as line segments
+fn draw_grid_lines(
+    ctx: &mut ratatui::widgets::canvas::Context<'_>,
+    min_lng: f64,
+    max_lng: f64,
+    min_lat: f64,
+    max_lat: f64,
+) {
+    use ratatui::widgets::canvas::Line;
+
+    let grid_color = Color::Rgb(60, 60, 60);
+
+    // Draw longitude lines every 15 degrees
+    let start_lng = (min_lng / 15.0).ceil() * 15.0;
+    let mut lng = start_lng;
+    while lng <= max_lng {
+        ctx.draw(&Line {
+            x1: lng,
+            y1: min_lat,
+            x2: lng,
+            y2: max_lat,
+            color: grid_color,
+        });
+        lng += 15.0;
+    }
+
+    // Draw latitude lines every 15 degrees
+    let start_lat = (min_lat / 15.0).ceil() * 15.0;
+    let mut lat = start_lat;
+    while lat <= max_lat {
+        ctx.draw(&Line {
+            x1: min_lng,
+            y1: lat,
+            x2: max_lng,
+            y2: lat,
+            color: grid_color,
+        });
+        lat += 15.0;
+    }
+}
+
+/// Draw high-resolution coastlines from Natural Earth data
+fn draw_coastlines(
+    ctx: &mut ratatui::widgets::canvas::Context<'_>,
+    min_lng: f64,
+    max_lng: f64,
+    min_lat: f64,
+    max_lat: f64,
+) {
+    use crate::coastline_data::COASTLINE_SEGMENTS;
+    use ratatui::widgets::canvas::Line;
+
+    let coastline_color = Color::Rgb(100, 200, 255);
+
+    // Draw thick coastlines by rendering each segment 3 times with offsets
+    let offsets: [f64; 3] = [0.0, 0.12, -0.12];
+
+    for offset in offsets {
+        for segment in COASTLINE_SEGMENTS {
+            let segment: &[(f64, f64)] = segment; // Type annotation
+                                                  // Skip segments that are completely outside the view (with offset buffer)
+            let segment_in_view = segment.iter().any(|(lng, lat)| {
+                let lng_off = lng + offset;
+                let lat_off = lat + offset;
+                lng_off >= min_lng && lng_off <= max_lng && lat_off >= min_lat && lat_off <= max_lat
+            });
+
+            if !segment_in_view {
+                continue;
+            }
+
+            // Draw connected line segments with offset
+            for i in 0..segment.len().saturating_sub(1) {
+                let (lng1, lat1) = segment[i];
+                let (lng2, lat2) = segment[i + 1];
+
+                // Apply offset to create thick line effect
+                let lng1_off = lng1 + offset;
+                let lat1_off = lat1 + offset;
+                let lng2_off = lng2 + offset;
+                let lat2_off = lat2 + offset;
+
+                // Only draw if at least one point is in view (for performance)
+                let p1_in_view = lng1_off >= min_lng
+                    && lng1_off <= max_lng
+                    && lat1_off >= min_lat
+                    && lat1_off <= max_lat;
+                let p2_in_view = lng2_off >= min_lng
+                    && lng2_off <= max_lng
+                    && lat2_off >= min_lat
+                    && lat2_off <= max_lat;
+
+                if p1_in_view || p2_in_view {
+                    ctx.draw(&Line {
+                        x1: lng1_off,
+                        y1: lat1_off,
+                        x2: lng2_off,
+                        y2: lat2_off,
+                        color: coastline_color,
+                    });
+                }
+            }
+        }
+    }
+}
+
+/// Render mini map in top-right corner showing global context
+fn render_mini_map(
+    frame: &mut Frame<'_>,
+    parent_area: Rect,
+    view_min_lng: f64,
+    view_max_lng: f64,
+    view_min_lat: f64,
+    view_max_lat: f64,
+) {
+    // Mini map size: 15x8 characters
+    let mini_width = 15u16;
+    let mini_height = 8u16;
+
+    let mini_area = Rect {
+        x: parent_area.x + parent_area.width - mini_width - 2,
+        y: parent_area.y + 1,
+        width: mini_width,
+        height: mini_height,
+    };
+
+    let mini_canvas = Canvas::default()
+        .x_bounds([-180.0, 180.0])
+        .y_bounds([-90.0, 90.0])
+        .marker(Marker::Braille)
+        .paint(|ctx| {
+            // Draw world map coastlines (dimmed)
+            draw_coastlines(ctx, -180.0, 180.0, -90.0, 90.0);
+
+            // Draw viewport rectangle showing current view
+            let border_color = Color::Rgb(255, 255, 100);
+
+            // Top edge
+            ctx.draw(&ratatui::widgets::canvas::Line {
+                x1: view_min_lng,
+                y1: view_max_lat,
+                x2: view_max_lng,
+                y2: view_max_lat,
+                color: border_color,
+            });
+            // Bottom edge
+            ctx.draw(&ratatui::widgets::canvas::Line {
+                x1: view_min_lng,
+                y1: view_min_lat,
+                x2: view_max_lng,
+                y2: view_min_lat,
+                color: border_color,
+            });
+            // Left edge
+            ctx.draw(&ratatui::widgets::canvas::Line {
+                x1: view_min_lng,
+                y1: view_min_lat,
+                x2: view_min_lng,
+                y2: view_max_lat,
+                color: border_color,
+            });
+            // Right edge
+            ctx.draw(&ratatui::widgets::canvas::Line {
+                x1: view_max_lng,
+                y1: view_min_lat,
+                x2: view_max_lng,
+                y2: view_max_lat,
+                color: border_color,
+            });
+        })
+        .block(Block::default().borders(Borders::NONE));
+
+    frame.render_widget(mini_canvas, mini_area);
+}
+
+/// Render selected event label in bottom-right of map
+fn render_event_label(
+    frame: &mut Frame<'_>,
+    parent_area: Rect,
+    label: &str,
+    location: &str,
+    lat: f64,
+    lng: f64,
+) {
+    // Prepare label text (truncate if too long)
+    let max_label_len = 30usize;
+    let display_label = if label.len() > max_label_len {
+        format!("{}...", &label[..max_label_len.saturating_sub(3)])
+    } else {
+        label.to_string()
+    };
+
+    let lines = vec![
+        Line::from(vec![Span::styled(
+            display_label,
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(vec![Span::styled(
+            location,
+            Style::default().fg(Color::Yellow),
+        )]),
+        Line::from(vec![Span::styled(
+            format!("{:.4}°, {:.4}°", lat, lng),
+            Style::default().fg(Color::Cyan),
+        )]),
+    ];
+
+    // Calculate label dimensions
+    let label_width = lines
+        .iter()
+        .map(|line| line.to_string().len())
+        .max()
+        .unwrap_or(20)
+        .min(35) as u16;
+
+    let label_area = Rect {
+        x: parent_area.x + parent_area.width - label_width - 3,
+        y: parent_area.y + parent_area.height - 5,
+        width: label_width + 2,
+        height: 4,
+    };
+
+    let label_widget = Paragraph::new(lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Rgb(100, 100, 100)))
+            .style(Style::default().bg(Color::Rgb(10, 10, 20))),
+    );
+
+    frame.render_widget(Clear, label_area);
+    frame.render_widget(label_widget, label_area);
 }
 
 fn render_feed(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject]) {
@@ -855,8 +1240,10 @@ fn render_status(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObj
 
     let nav_keys = if app.filter_panel_open {
         "f: close | j/k: move | ENTER: toggle"
+    } else if app.is_map_view {
+        "/: search | m: list view | ENTER: details | 1-4: severity | g: refresh | q: quit"
     } else {
-        "/: search | f: filters | ENTER: details | 1-4: severity | g: refresh | q: quit"
+        "/: search | f: filters | m: map view | ENTER: details | 1-4: severity | g: refresh | q: quit"
     };
 
     let lines = vec![

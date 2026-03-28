@@ -709,3 +709,70 @@ Line 3: USD/EUR 1.0850 +0.12% +0.45% +0.89% +1.23%   |   USD/JPY 149.50 -0.08% -
 - `src/market_ticker.rs` - Added forex vector, Bitcoin/Ethereum symbols, bidirectional scroll with wrapping_add/wrapping_sub
 - `src/ui.rs` - Layout constraint changed to Length(3), render_ticker() renders 3 lines
 - `src/main.rs` - Refresh interval: 300s
+
+---
+
+### March 27, 2026 - Color-Coded Ticker Item Names
+
+✅ **Ticker item names now have category-specific colors**
+
+**Changes:**
+- **Commodities** (Gold, Silver, WTI Oil, Brent, Nat Gas, Bitcoin, Ethereum): Gold color (RGB 255, 215, 0)
+- **Indices/Stocks** (S&P 500, Dow Jones, 10Y Treasury, 30Y Treasury): Cyan color
+- **Forex/Currencies** (USD/EUR, USD/JPY, USD/CNY, USD/RUB, USD/INR): Light green color (RGB 144, 238, 144)
+
+**Implementation:**
+- Modified `format_line_styled()` in `market_ticker.rs` to accept a `name_color` parameter
+- Updated `render_ticker()` in `ui.rs` to pass appropriate colors for each ticker line
+- Only the item names are colored; prices remain default color, percentages keep green/red coloring
+
+**Files Changed:**
+- `src/market_ticker.rs` - Added `name_color` parameter to `format_line_styled()`
+- `src/ui.rs` - Updated `render_ticker()` to pass category-specific colors
+
+---
+
+### March 27, 2026 - Auto-Fetch Signals for New Events
+
+✅ **Signals now automatically load when new events arrive and become selected**
+
+**Problem:**
+- When new events are added to the feed (at index 0), the `expanded_idx` is still `Some(0)` from the previous event
+- The UI shows expanded details for the NEW event, but signals were never requested
+- Result: "Loading..." message that never resolves
+
+**Solution:**
+- Added logic in `tick()` after cache rebuild to check if the currently expanded event needs signals fetched
+- If the expanded event is an Incident and doesn't have signals in cache, trigger a fetch
+- This ensures signals load automatically when new data shifts into the expanded position
+
+**Files Changed:**
+- `src/app.rs` - Added signal fetch trigger in `tick()` method after cache rebuild
+
+---
+
+### March 27, 2026 - Partial Data Refresh Handling
+
+✅ **App now preserves existing data when API endpoints fail**
+
+**Problem:**
+- Occasionally the Feed (events) and World Leaders columns would go blank (0 events / 0 leaders)
+- Meanwhile Warships column continued working fine
+- Root cause: Individual API endpoints (/events, /vip) failing while others (/fleet) succeed
+- Old behavior: Entire snapshot replaced, wiping out working data
+
+**Solution:**
+- Implemented `merge_snapshot()` method that intelligently merges new data with existing data
+- Only replaces data for a category if the new snapshot has non-empty data for that category
+- Preserves old data when fetch returns empty (indicating a failure)
+- Shows status message indicating which categories were updated vs. kept from previous fetch
+
+**Status Messages:**
+- Full success: `"snapshot refreshed (mts)"`
+- Partial failure: `"partial refresh: updated [warships], kept old [events, leaders] (mts)"`
+- Manual refresh: `"manual refresh partial: updated [events], kept old [leaders] (mts)"`
+
+**Files Changed:**
+- `src/app.rs` - Added `merge_snapshot()` method, updated `tick()` and manual refresh ('g' key) handlers
+
+---

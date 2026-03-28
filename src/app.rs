@@ -124,6 +124,8 @@ pub struct App {
     pub feed_filters: FeedFilters,
     // Market ticker
     pub market_ticker: Arc<Mutex<MarketTicker>>,
+    // Map view toggle
+    pub is_map_view: bool,
 }
 
 impl App {
@@ -172,6 +174,7 @@ impl App {
                 show_reports: false,
             },
             market_ticker: Arc::new(Mutex::new(MarketTicker::new())),
+            is_map_view: false,
         };
 
         // Initial cache build
@@ -463,15 +466,49 @@ impl App {
         if Instant::now() >= self.next_refresh {
             match provider.fetch_snapshot() {
                 Ok(snapshot) => {
-                    self.snapshot = snapshot;
-                    self.last_refresh = self.snapshot.fetched_at;
+                    let (updates, failures) = self.merge_snapshot(snapshot);
                     self.next_refresh = Instant::now() + Duration::from_secs(30);
-                    self.status = format!("snapshot refreshed ({})", provider.name());
+
+                    // Build status message
+                    if failures.is_empty() {
+                        self.status = format!("snapshot refreshed ({})", provider.name());
+                    } else {
+                        let fail_str = failures.join(", ");
+                        let update_str = if updates.is_empty() {
+                            "none".to_string()
+                        } else {
+                            updates.join(", ")
+                        };
+                        self.status = format!(
+                            "partial refresh: updated [{}], kept old [{}] ({})",
+                            update_str,
+                            fail_str,
+                            provider.name()
+                        );
+                    }
+
                     self.invalidate_cache();
                     // Keep selection valid
                     let count = self.visible_objects_mut().len();
                     if self.selected_idx >= count && count > 0 {
                         self.selected_idx = count - 1;
+                    }
+                    // If an event is expanded, ensure its signals are fetched
+                    if let Some(expanded_idx) = self.expanded_idx {
+                        if self.focus == PaneFocus::Feed {
+                            if let Some(obj) = self.visible_objects().get(expanded_idx) {
+                                if obj.kind == crate::model::ObjectKind::Incident {
+                                    let needs_fetch = self
+                                        .signals_cache
+                                        .lock()
+                                        .map(|guard| !guard.contains_key(&obj.id))
+                                        .unwrap_or(false);
+                                    if needs_fetch {
+                                        self.pending_signal_fetch = Some(obj.id.clone());
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 Err(err) => {
@@ -550,11 +587,27 @@ impl App {
             }
             KeyCode::Char('g') => match provider.fetch_snapshot() {
                 Ok(snapshot) => {
-                    self.snapshot = snapshot;
-                    self.last_refresh = self.snapshot.fetched_at;
+                    let (updates, failures) = self.merge_snapshot(snapshot);
                     self.next_refresh = Instant::now() + Duration::from_secs(30);
                     self.invalidate_cache();
-                    self.status = format!("manual refresh ({})", provider.name());
+
+                    // Build status message
+                    if failures.is_empty() {
+                        self.status = format!("manual refresh ({})", provider.name());
+                    } else {
+                        let fail_str = failures.join(", ");
+                        let update_str = if updates.is_empty() {
+                            "none".to_string()
+                        } else {
+                            updates.join(", ")
+                        };
+                        self.status = format!(
+                            "manual refresh partial: updated [{}], kept old [{}] ({})",
+                            update_str,
+                            fail_str,
+                            provider.name()
+                        );
+                    }
                 }
                 Err(err) => {
                     self.status = format!("manual refresh failed: {err}");
@@ -593,6 +646,14 @@ impl App {
             }
             KeyCode::Char('/') => {
                 self.start_search();
+            }
+            KeyCode::Char('m') => {
+                self.is_map_view = !self.is_map_view;
+                self.status = if self.is_map_view {
+                    String::from("map view enabled")
+                } else {
+                    String::from("map view disabled")
+                };
             }
             _ => {}
         }
@@ -849,5 +910,49 @@ impl App {
         }
         let new_idx = (self.filter_selection_idx as isize + delta).rem_euclid(count as isize);
         self.filter_selection_idx = new_idx as usize;
+    }
+
+    /// Merge a new snapshot with existing data, keeping old data when new data is empty.
+    /// Returns a tuple of (updated_types, failed_types) for status reporting.
+    fn merge_snapshot(&mut self, new_snapshot: Snapshot) -> (Vec<&'static str>, Vec<&'static str>) {
+        let mut updates = Vec::new();
+        let mut failures = Vec::new();
+
+        // Merge events: keep old if new is empty
+        if new_snapshot.events.is_empty() && !self.snapshot.events.is_empty() {
+            failures.push("events");
+        } else if !new_snapshot.events.is_empty() {
+            self.snapshot.events = new_snapshot.events;
+            updates.push("events");
+        }
+
+        // Merge aircraft: keep old if new is empty
+        if new_snapshot.aircraft.is_empty() && !self.snapshot.aircraft.is_empty() {
+            failures.push("aircraft");
+        } else if !new_snapshot.aircraft.is_empty() {
+            self.snapshot.aircraft = new_snapshot.aircraft;
+            updates.push("aircraft");
+        }
+
+        // Merge warships: keep old if new is empty
+        if new_snapshot.warships.is_empty() && !self.snapshot.warships.is_empty() {
+            failures.push("warships");
+        } else if !new_snapshot.warships.is_empty() {
+            self.snapshot.warships = new_snapshot.warships;
+            updates.push("warships");
+        }
+
+        // Merge leaders: keep old if new is empty
+        if new_snapshot.leaders.is_empty() && !self.snapshot.leaders.is_empty() {
+            failures.push("leaders");
+        } else if !new_snapshot.leaders.is_empty() {
+            self.snapshot.leaders = new_snapshot.leaders;
+            updates.push("leaders");
+        }
+
+        self.snapshot.fetched_at = new_snapshot.fetched_at;
+        self.last_refresh = new_snapshot.fetched_at;
+
+        (updates, failures)
     }
 }
