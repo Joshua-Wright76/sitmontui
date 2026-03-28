@@ -4,7 +4,7 @@ use ratatui::{
     symbols::Marker,
     text::{Line, Span},
     widgets::{
-        canvas::{Canvas, Points},
+        canvas::{Canvas, Line as CanvasLine},
         Block, Borders, Clear, Paragraph, Wrap,
     },
     Frame,
@@ -129,18 +129,18 @@ fn render_ticker(frame: &mut Frame<'_>, area: Rect, ticker: &MarketTicker) {
 }
 
 fn render_map(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject]) {
-    // Collect points for each category
-    let mut event_points: Vec<(f64, f64)> = Vec::new();
-    let mut warship_points: Vec<(f64, f64)> = Vec::new();
-    let mut leader_points: Vec<(f64, f64)> = Vec::new();
-    let mut selected_point: Option<(f64, f64)> = None;
+    // Collect events with their categories
+    let mut event_markers: Vec<(f64, f64, Option<&str>)> = Vec::new();
+    let mut warship_markers: Vec<(f64, f64, &str)> = Vec::new();
+    let mut leader_markers: Vec<(f64, f64, &str)> = Vec::new();
+    let mut selected_marker: Option<(f64, f64)> = None;
     let mut selected_event_info: Option<(&str, &str, f64, f64)> = None;
 
-    // Collect event points from visible objects
+    // Collect event markers from visible objects
     for (idx, obj) in objects.iter().enumerate() {
         let is_selected = idx == app.selected_idx && app.focus == PaneFocus::Feed;
         if is_selected {
-            selected_point = Some((obj.lng, obj.lat));
+            selected_marker = Some((obj.lng, obj.lat));
             selected_event_info = Some((
                 &obj.label,
                 obj.metadata.location.as_deref().unwrap_or("Unknown"),
@@ -148,27 +148,28 @@ fn render_map(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject
                 obj.lng,
             ));
         } else {
-            event_points.push((obj.lng, obj.lat));
+            let category = obj.metadata.category.as_deref();
+            event_markers.push((obj.lng, obj.lat, category));
         }
     }
 
-    // Collect warship points
+    // Collect warship markers
     for (idx, ship) in app.filtered_warships().iter().enumerate() {
         let is_selected = idx == app.selected_idx_warships && app.focus == PaneFocus::Warships;
         if is_selected {
-            selected_point = Some((ship.lng, ship.lat));
+            selected_marker = Some((ship.lng, ship.lat));
         } else {
-            warship_points.push((ship.lng, ship.lat));
+            warship_markers.push((ship.lng, ship.lat, &ship.name));
         }
     }
 
-    // Collect leader points
+    // Collect leader markers
     for (idx, leader) in app.filtered_leaders().iter().enumerate() {
         let is_selected = idx == app.selected_idx_leaders && app.focus == PaneFocus::Leaders;
         if is_selected {
-            selected_point = Some((leader.lng, leader.lat));
+            selected_marker = Some((leader.lng, leader.lat));
         } else {
-            leader_points.push((leader.lng, leader.lat));
+            leader_markers.push((leader.lng, leader.lat, &leader.name));
         }
     }
 
@@ -182,16 +183,24 @@ fn render_map(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject
         (20.0, 30.0) // Default: Middle East
     };
 
-    // Calculate bounds with ~12.5% zoom (45° x 22.5° view), clamped to world edges
-    let min_lng = (center_lng - 22.5).max(-180.0);
-    let max_lng = (center_lng + 22.5).min(180.0);
-    let min_lat = (center_lat - 11.25).max(-90.0);
-    let max_lat = (center_lat + 11.25).min(90.0);
+    // Calculate bounds with dynamic aspect ratio to prevent stretching
+    // Fixed longitude range (45° = ~12.5% zoom)
+    let lng_range = 45.0;
+    let min_lng = (center_lng - lng_range / 2.0).max(-180.0);
+    let max_lng = (center_lng + lng_range / 2.0).min(180.0);
+
+    // Calculate latitude range based on terminal aspect ratio
+    // Terminal characters are ~2:1 (width:height), so effective height is 2x the row count
+    let map_width = area.width as f64;
+    let map_height = area.height as f64;
+    let aspect_ratio = map_width / (map_height * 2.0); // Account for 2:1 character cell proportions
+    let lat_range = (lng_range / aspect_ratio).max(10.0); // Minimum 10° to prevent extreme zoom
+    let min_lat = (center_lat - lat_range / 2.0).max(-90.0);
+    let max_lat = (center_lat + lat_range / 2.0).min(90.0);
 
     let canvas = Canvas::default()
         .x_bounds([min_lng, max_lng])
         .y_bounds([min_lat, max_lat])
-        .marker(Marker::Dot)
         .paint(|ctx| {
             // Draw high-resolution coastlines from Natural Earth data
             draw_coastlines(ctx, min_lng, max_lng, min_lat, max_lat);
@@ -199,36 +208,60 @@ fn render_map(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject
             // Draw latitude/longitude grid lines
             draw_grid_lines(ctx, min_lng, max_lng, min_lat, max_lat);
 
-            // Draw event points (bright yellow)
-            if !event_points.is_empty() {
-                ctx.draw(&Points {
-                    coords: &event_points,
-                    color: Color::Rgb(255, 255, 0),
-                });
+            // Draw center crosshairs (subtle white lines bisecting the map)
+            let crosshair_color = Color::Rgb(200, 200, 200);
+            // Horizontal line across center latitude
+            ctx.draw(&CanvasLine {
+                x1: min_lng,
+                y1: center_lat,
+                x2: max_lng,
+                y2: center_lat,
+                color: crosshair_color,
+            });
+            // Vertical line across center longitude
+            ctx.draw(&CanvasLine {
+                x1: center_lng,
+                y1: min_lat,
+                x2: center_lng,
+                y2: max_lat,
+                color: crosshair_color,
+            });
+
+            // Draw event markers with emojis (bright yellow)
+            for (lng, lat, category) in &event_markers {
+                let emoji = get_event_emoji(*category);
+                ctx.print(
+                    *lng,
+                    *lat,
+                    Span::styled(emoji, Style::default().fg(Color::Rgb(255, 255, 0))),
+                );
             }
 
-            // Draw warship points (bright cyan)
-            if !warship_points.is_empty() {
-                ctx.draw(&Points {
-                    coords: &warship_points,
-                    color: Color::Rgb(0, 255, 255),
-                });
+            // Draw warship markers (bright cyan)
+            for (lng, lat, _name) in &warship_markers {
+                ctx.print(
+                    *lng,
+                    *lat,
+                    Span::styled("🚢", Style::default().fg(Color::Rgb(0, 255, 255))),
+                );
             }
 
-            // Draw leader points (bright magenta)
-            if !leader_points.is_empty() {
-                ctx.draw(&Points {
-                    coords: &leader_points,
-                    color: Color::Rgb(255, 0, 255),
-                });
+            // Draw leader markers (bright magenta)
+            for (lng, lat, _name) in &leader_markers {
+                ctx.print(
+                    *lng,
+                    *lat,
+                    Span::styled("👤", Style::default().fg(Color::Rgb(255, 0, 255))),
+                );
             }
 
-            // Draw selected point in bright white (larger)
-            if let Some((lng, lat)) = selected_point {
-                ctx.draw(&Points {
-                    coords: &[(lng, lat)],
-                    color: Color::White,
-                });
+            // Draw selected marker as white star
+            if let Some((lng, lat)) = selected_marker {
+                ctx.print(
+                    lng,
+                    lat,
+                    Span::styled("⭐", Style::default().fg(Color::White)),
+                );
             }
         })
         .block(Block::default().title("World Map").borders(Borders::ALL));
@@ -241,6 +274,61 @@ fn render_map(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject
     // Draw selected event label in bottom-right
     if let Some((label, location, lat, lng)) = selected_event_info {
         render_event_label(frame, area, label, location, lat, lng);
+    }
+}
+
+/// Get the appropriate emoji for an event based on its category
+fn get_event_emoji(category: Option<&str>) -> &'static str {
+    match category {
+        Some(cat) => {
+            let cat_lower = cat.to_lowercase();
+            if cat_lower.contains("conflict")
+                || cat_lower.contains("military")
+                || cat_lower.contains("war")
+            {
+                "🔥"
+            } else if cat_lower.contains("disaster")
+                || cat_lower.contains("flood")
+                || cat_lower.contains("storm")
+            {
+                "🌊"
+            } else if cat_lower.contains("political")
+                || cat_lower.contains("election")
+                || cat_lower.contains("protest")
+            {
+                "🏛️"
+            } else if cat_lower.contains("economic")
+                || cat_lower.contains("financial")
+                || cat_lower.contains("market")
+            {
+                "💰"
+            } else if cat_lower.contains("health")
+                || cat_lower.contains("disease")
+                || cat_lower.contains("medical")
+            {
+                "🏥"
+            } else if cat_lower.contains("environment")
+                || cat_lower.contains("climate")
+                || cat_lower.contains("pollution")
+            {
+                "🌲"
+            } else if cat_lower.contains("technology") || cat_lower.contains("innovation") {
+                "💻"
+            } else if cat_lower.contains("cyber")
+                || cat_lower.contains("hack")
+                || cat_lower.contains("data")
+            {
+                "🔒"
+            } else if cat_lower.contains("crime")
+                || cat_lower.contains("terror")
+                || cat_lower.contains("attack")
+            {
+                "🚨"
+            } else {
+                "📍"
+            }
+        }
+        None => "📍",
     }
 }
 
