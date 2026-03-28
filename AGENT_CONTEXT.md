@@ -776,3 +776,78 @@ Line 3: USD/EUR 1.0850 +0.12% +0.45% +0.89% +1.23%   |   USD/JPY 149.50 -0.08% -
 - `src/app.rs` - Added `merge_snapshot()` method, updated `tick()` and manual refresh ('g' key) handlers
 
 ---
+
+---
+
+### March 27, 2026 - Interactive Map View Feature
+
+✅ **Added press 'm' to toggle map view showing geographic visualization of events**
+
+**What Changed:**
+
+1. **Map View Toggle**
+   - Press `m` to switch between normal 3-column view and map view
+   - Map view: Feed column stays on left (33%), map takes right side (67%)
+   - Normal view: Three columns (Feed | Warships | World Leaders)
+   - Status bar shows "map view enabled/disabled" when toggling
+
+2. **High-Resolution Coastlines**
+   - Replaced ratatui's built-in Map widget with Natural Earth 1:110m coastline data
+   - 134 coastline segments with 5,128 total points
+   - Data source: Natural Earth Data (public domain)
+   - Stored in `src/coastline_data.rs` (~144KB)
+   - Drawn as continuous Line segments instead of Braille dots
+   - Thick coastline effect: each segment drawn 3 times with ±0.12° offsets
+
+3. **Auto-Pan to Selected Event**
+   - Map automatically centers on currently selected feed event
+   - Ignores invalid coordinates (0°, 0°)
+   - Updates instantly when navigating with j/k
+   - Falls back to Middle East view (20°E, 30°N) when no valid event selected
+
+4. **Zoom Levels**
+   - Started at 50% zoom (180° × 90° view)
+   - Increased to 25% zoom (90° × 45° view)
+   - Final: 12.5% zoom (45° × 22.5° view) - tight focus on event location
+
+5. **Visual Features**
+   - **Mini Map**: Top-right corner showing global context with viewport rectangle
+   - **Event Label**: Bottom-right showing event name, location, coordinates
+   - **Grid Lines**: Latitude/longitude every 15° in subtle gray
+   - **Color Coding**:
+     - Events: Bright yellow (255, 255, 0)
+     - Warships: Bright cyan (0, 255, 255)
+     - Leaders: Bright magenta (255, 0, 255)
+     - Selected: White (255, 255, 255)
+     - Coastlines: Cyan-blue (100, 200, 255)
+   - **Markers**: Braille for crisp point rendering at all zoom levels
+
+6. **Performance Optimizations**
+   - Smart viewport culling: only renders coastlines within current view
+   - Segment-level visibility checking before drawing
+   - Point-level visibility for individual line segments
+   - Efficient even with 5,128 coastline points
+
+**Files Changed:**
+- `src/app.rs` - Added `is_map_view: bool` field and toggle handling
+- `src/ui.rs` - Complete map rendering logic, mini map, event label, grid lines
+- `src/coastline_data.rs` - NEW: Natural Earth coastline coordinate data
+- `src/lib.rs` - Added coastline_data module
+- `src/main.rs` - Added coastline_data module declaration
+
+**Implementation Details:**
+- Uses Canvas widget with equirectangular projection (direct lat/lng mapping)
+- Custom `draw_coastlines()` function with viewport culling
+- Custom `draw_grid_lines()` function for lat/lng grid
+- `render_mini_map()` for global context inset
+- `render_event_label()` for selected event info overlay
+
+**Trade-offs:**
+- Binary size increased by ~144KB for coastline data
+- Slightly longer compile times due to large static arrays
+- Zero runtime overhead (data compiled in, not loaded at runtime)
+
+**The app now provides geographic context for events with an elegant, performant map view!**
+
+---
+
