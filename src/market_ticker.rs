@@ -211,20 +211,20 @@ impl MarketTicker {
 
             if item.show_hourly {
                 styled_spans.push(StyledSpan {
-                    text: format!("{:+.2}% ", item.change_1h),
+                    text: format!("🕐{:+.2}% ", item.change_1h),
                     color: Some(pct_color(item.change_1h)),
                 });
             }
             styled_spans.push(StyledSpan {
-                text: format!("{:+.2}% ", item.change_24h),
+                text: format!("☀️{:+.2}% ", item.change_24h),
                 color: Some(pct_color(item.change_24h)),
             });
             styled_spans.push(StyledSpan {
-                text: format!("{:+.2}% ", item.change_1w),
+                text: format!("W{:+.2}% ", item.change_1w),
                 color: Some(pct_color(item.change_1w)),
             });
             styled_spans.push(StyledSpan {
-                text: format!("{:+.2}% ", item.change_1m),
+                text: format!("🌙{:+.2}% ", item.change_1m),
                 color: Some(pct_color(item.change_1m)),
             });
 

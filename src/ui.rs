@@ -381,61 +381,82 @@ fn draw_coastlines(
     min_lat: f64,
     max_lat: f64,
 ) {
-    use crate::coastline_data::COASTLINE_SEGMENTS;
+    use crate::coastline_data::{BORDER_SEGMENTS, COASTLINE_SEGMENTS, LAKE_SEGMENTS};
     use ratatui::widgets::canvas::Line;
 
     let coastline_color = Color::Rgb(100, 200, 255);
+    let lake_color = Color::Rgb(80, 180, 240); // Slightly darker blue for lakes
+    let border_color = Color::Rgb(120, 120, 120); // Subtle gray for borders
 
-    // Draw thick coastlines by rendering each segment 3 times with offsets
-    let offsets: [f64; 3] = [0.0, 0.12, -0.12];
+    // Helper to draw segments with a given color
+    let draw_segments = |ctx: &mut ratatui::widgets::canvas::Context<'_>,
+                         segments: &[&[(f64, f64)]],
+                         color: Color,
+                         thickness: usize| {
+        // Draw thick lines by rendering with offsets
+        let offsets: Vec<f64> = match thickness {
+            1 => vec![0.0],
+            2 => vec![0.0, 0.06],
+            _ => vec![0.0, 0.10, -0.10],
+        };
 
-    for offset in offsets {
-        for segment in COASTLINE_SEGMENTS {
-            let segment: &[(f64, f64)] = segment; // Type annotation
-                                                  // Skip segments that are completely outside the view (with offset buffer)
-            let segment_in_view = segment.iter().any(|(lng, lat)| {
-                let lng_off = lng + offset;
-                let lat_off = lat + offset;
-                lng_off >= min_lng && lng_off <= max_lng && lat_off >= min_lat && lat_off <= max_lat
-            });
+        for offset in offsets {
+            for segment in segments {
+                // Skip segments completely outside view
+                let segment_in_view = segment.iter().any(|(lng, lat)| {
+                    let lng_off = lng + offset;
+                    let lat_off = lat + offset;
+                    lng_off >= min_lng
+                        && lng_off <= max_lng
+                        && lat_off >= min_lat
+                        && lat_off <= max_lat
+                });
 
-            if !segment_in_view {
-                continue;
-            }
+                if !segment_in_view {
+                    continue;
+                }
 
-            // Draw connected line segments with offset
-            for i in 0..segment.len().saturating_sub(1) {
-                let (lng1, lat1) = segment[i];
-                let (lng2, lat2) = segment[i + 1];
+                // Draw connected line segments
+                for i in 0..segment.len().saturating_sub(1) {
+                    let (lng1, lat1) = segment[i];
+                    let (lng2, lat2) = segment[i + 1];
 
-                // Apply offset to create thick line effect
-                let lng1_off = lng1 + offset;
-                let lat1_off = lat1 + offset;
-                let lng2_off = lng2 + offset;
-                let lat2_off = lat2 + offset;
+                    let lng1_off = lng1 + offset;
+                    let lat1_off = lat1 + offset;
+                    let lng2_off = lng2 + offset;
+                    let lat2_off = lat2 + offset;
 
-                // Only draw if at least one point is in view (for performance)
-                let p1_in_view = lng1_off >= min_lng
-                    && lng1_off <= max_lng
-                    && lat1_off >= min_lat
-                    && lat1_off <= max_lat;
-                let p2_in_view = lng2_off >= min_lng
-                    && lng2_off <= max_lng
-                    && lat2_off >= min_lat
-                    && lat2_off <= max_lat;
+                    let p1_in_view = lng1_off >= min_lng
+                        && lng1_off <= max_lng
+                        && lat1_off >= min_lat
+                        && lat1_off <= max_lat;
+                    let p2_in_view = lng2_off >= min_lng
+                        && lng2_off <= max_lng
+                        && lat2_off >= min_lat
+                        && lat2_off <= max_lat;
 
-                if p1_in_view || p2_in_view {
-                    ctx.draw(&Line {
-                        x1: lng1_off,
-                        y1: lat1_off,
-                        x2: lng2_off,
-                        y2: lat2_off,
-                        color: coastline_color,
-                    });
+                    if p1_in_view || p2_in_view {
+                        ctx.draw(&Line {
+                            x1: lng1_off,
+                            y1: lat1_off,
+                            x2: lng2_off,
+                            y2: lat2_off,
+                            color,
+                        });
+                    }
                 }
             }
         }
-    }
+    };
+
+    // Draw borders first (subtle, behind coastlines)
+    draw_segments(ctx, BORDER_SEGMENTS, border_color, 1);
+
+    // Draw coastlines (thickest)
+    draw_segments(ctx, COASTLINE_SEGMENTS, coastline_color, 3);
+
+    // Draw lakes (medium thickness)
+    draw_segments(ctx, LAKE_SEGMENTS, lake_color, 2);
 }
 
 /// Render mini map in top-right corner showing global context

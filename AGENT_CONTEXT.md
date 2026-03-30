@@ -851,3 +851,29 @@ Line 3: USD/EUR 1.0850 +0.12% +0.45% +0.89% +1.23%   |   USD/JPY 149.50 -0.08% -
 
 ---
 
+### March 29, 2026 - Ticker Timeframe Labels with Emojis
+
+✅ **Added emoji labels to market ticker percentage changes**
+
+**Labels Added:**
+- 🕐 **Clock emoji** - 1 hour change
+- ☀️ **Sun emoji** - 24 hour (1 day) change
+- **W** - 1 week change (text label)
+- 🌙 **Moon emoji** - 1 month change
+
+**Display Format:**
+```
+Gold 2945.30 🕐+0.42% ☀️+1.2% W-1.3% 🌙-5.4% | Silver 69.80 🕐+0.00% ☀️-20.94% W+0.63% 🌙-20.94%
+```
+
+**Implementation:**
+- Modified `format_line_styled()` in `src/market_ticker.rs`
+- Each percentage value is prefixed with its timeframe indicator
+- Emojis help users quickly identify which timeframe each percentage represents
+- Maintains existing color-coding (green for positive, red for negative)
+
+**Files Changed:**
+- `src/market_ticker.rs` - Updated percentage formatting to include emoji prefixes
+
+---
+
