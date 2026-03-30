@@ -191,19 +191,12 @@ fn render_map(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject
     let mut warship_markers: Vec<(f64, f64, &str)> = Vec::new();
     let mut leader_markers: Vec<(f64, f64, &str)> = Vec::new();
     let mut selected_marker: Option<(f64, f64)> = None;
-    let mut selected_event_info: Option<(&str, &str, f64, f64)> = None;
 
     // Collect event markers from visible objects
     for (idx, obj) in objects.iter().enumerate() {
         let is_selected = idx == app.selected_idx && app.focus == PaneFocus::Feed;
         if is_selected {
             selected_marker = Some((obj.lng, obj.lat));
-            selected_event_info = Some((
-                &obj.label,
-                obj.metadata.location.as_deref().unwrap_or("Unknown"),
-                obj.lat,
-                obj.lng,
-            ));
         } else {
             let category = obj.metadata.category.as_deref();
             event_markers.push((obj.lng, obj.lat, category));
@@ -273,13 +266,7 @@ fn render_map(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject
         .x_bounds([min_lng, max_lng])
         .y_bounds([min_lat, max_lat])
         .paint(|ctx| {
-            // Draw high-resolution coastlines from Natural Earth data
-            draw_coastlines(ctx, min_lng, max_lng, min_lat, max_lat);
-
-            // Draw latitude/longitude grid lines
-            draw_grid_lines(ctx, min_lng, max_lng, min_lat, max_lat);
-
-            // Draw center crosshairs (subtle white lines bisecting the map)
+            // Draw center crosshairs first (so other elements overlay them)
             let crosshair_color = Color::Rgb(200, 200, 200);
             // Horizontal line across center latitude
             ctx.draw(&CanvasLine {
@@ -297,6 +284,9 @@ fn render_map(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject
                 y2: max_lat,
                 color: crosshair_color,
             });
+
+            // Draw high-resolution coastlines
+            draw_coastlines(ctx, min_lng, max_lng, min_lat, max_lat);
 
             // Draw event markers with emojis (bright yellow)
             for (lng, lat, category) in &event_markers {
@@ -341,11 +331,6 @@ fn render_map(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject
 
     // Draw mini map in top-right corner
     render_mini_map(frame, area, min_lng, max_lng, min_lat, max_lat);
-
-    // Draw selected event label in bottom-right
-    if let Some((label, location, lat, lng)) = selected_event_info {
-        render_event_label(frame, area, label, location, lat, lng);
-    }
 }
 
 /// Get the appropriate emoji for an event based on its category
@@ -400,47 +385,6 @@ fn get_event_emoji(category: Option<&str>) -> &'static str {
             }
         }
         None => "📍",
-    }
-}
-
-/// Draw simplified country borders as line segments
-fn draw_grid_lines(
-    ctx: &mut ratatui::widgets::canvas::Context<'_>,
-    min_lng: f64,
-    max_lng: f64,
-    min_lat: f64,
-    max_lat: f64,
-) {
-    use ratatui::widgets::canvas::Line;
-
-    let grid_color = Color::Rgb(60, 60, 60);
-
-    // Draw longitude lines every 15 degrees
-    let start_lng = (min_lng / 15.0).ceil() * 15.0;
-    let mut lng = start_lng;
-    while lng <= max_lng {
-        ctx.draw(&Line {
-            x1: lng,
-            y1: min_lat,
-            x2: lng,
-            y2: max_lat,
-            color: grid_color,
-        });
-        lng += 15.0;
-    }
-
-    // Draw latitude lines every 15 degrees
-    let start_lat = (min_lat / 15.0).ceil() * 15.0;
-    let mut lat = start_lat;
-    while lat <= max_lat {
-        ctx.draw(&Line {
-            x1: min_lng,
-            y1: lat,
-            x2: max_lng,
-            y2: lat,
-            color: grid_color,
-        });
-        lat += 15.0;
     }
 }
 
@@ -597,66 +541,6 @@ fn render_mini_map(
         .block(Block::default().borders(Borders::NONE));
 
     frame.render_widget(mini_canvas, mini_area);
-}
-
-/// Render selected event label in bottom-right of map
-fn render_event_label(
-    frame: &mut Frame<'_>,
-    parent_area: Rect,
-    label: &str,
-    location: &str,
-    lat: f64,
-    lng: f64,
-) {
-    // Prepare label text (truncate if too long)
-    let max_label_len = 30usize;
-    let display_label = if label.len() > max_label_len {
-        format!("{}...", &label[..max_label_len.saturating_sub(3)])
-    } else {
-        label.to_string()
-    };
-
-    let lines = vec![
-        Line::from(vec![Span::styled(
-            display_label,
-            Style::default()
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD),
-        )]),
-        Line::from(vec![Span::styled(
-            location,
-            Style::default().fg(Color::Yellow),
-        )]),
-        Line::from(vec![Span::styled(
-            format!("{:.4}°, {:.4}°", lat, lng),
-            Style::default().fg(Color::Cyan),
-        )]),
-    ];
-
-    // Calculate label dimensions
-    let label_width = lines
-        .iter()
-        .map(|line| line.to_string().len())
-        .max()
-        .unwrap_or(20)
-        .min(35) as u16;
-
-    let label_area = Rect {
-        x: parent_area.x + parent_area.width - label_width - 3,
-        y: parent_area.y + parent_area.height - 5,
-        width: label_width + 2,
-        height: 4,
-    };
-
-    let label_widget = Paragraph::new(lines).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Rgb(100, 100, 100)))
-            .style(Style::default().bg(Color::Rgb(10, 10, 20))),
-    );
-
-    frame.render_widget(Clear, label_area);
-    frame.render_widget(label_widget, label_area);
 }
 
 fn render_feed(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject]) {
@@ -1823,20 +1707,14 @@ fn object_style(object: &MapObject, selected: bool) -> Style {
 }
 
 fn country_flag(country_code: &str) -> String {
-    // Convert 2-letter country code to flag emoji
-    // This works by offsetting the characters to regional indicator symbols
+    // Return bracketed country code instead of emoji
+    // Emojis don't render properly in many terminals, showing as letters instead
     let code = country_code.to_uppercase();
-    if code.len() != 2 {
-        return "🏳️".to_string();
+    if code.len() == 2 {
+        format!("[{}]", code)
+    } else {
+        "[??]".to_string()
     }
-
-    let bytes = code.as_bytes();
-    // Regional indicator symbols are in the range 0x1F1E6 - 0x1F1FF
-    // We need to use char::from_u32 since these are outside u16 range
-    let first_char = char::from_u32(0x1F1E6 + (bytes[0] - b'A') as u32).unwrap_or('🏳');
-    let second_char = char::from_u32(0x1F1E6 + (bytes[1] - b'A') as u32).unwrap_or('🏳');
-
-    format!("{}{}", first_char, second_char)
 }
 
 fn on_off(v: bool) -> &'static str {
