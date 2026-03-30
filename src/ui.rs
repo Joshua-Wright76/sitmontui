@@ -248,8 +248,9 @@ fn render_map(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject
     };
 
     // Calculate bounds with dynamic aspect ratio to prevent stretching
-    // Fixed longitude range (45° = ~12.5% zoom)
-    let lng_range = 45.0;
+    // Base longitude range is 45° (~12.5% zoom at 1.0x), adjusted by zoom factor
+    let base_lng_range = 45.0;
+    let lng_range = base_lng_range / app.map_zoom_factor;
     let min_lng = (center_lng - lng_range / 2.0).max(-180.0);
     let max_lng = (center_lng + lng_range / 2.0).min(180.0);
 

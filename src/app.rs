@@ -126,6 +126,8 @@ pub struct App {
     pub market_ticker: Arc<Mutex<MarketTicker>>,
     // Map view toggle
     pub is_map_view: bool,
+    // Map zoom level (1.0 = default, 2.0 = 2x zoom in, 0.5 = zoom out)
+    pub map_zoom_factor: f64,
 }
 
 impl App {
@@ -175,6 +177,7 @@ impl App {
             },
             market_ticker: Arc::new(Mutex::new(MarketTicker::new())),
             is_map_view: false,
+            map_zoom_factor: 1.0,
         };
 
         // Initial cache build
@@ -654,6 +657,21 @@ impl App {
                 } else {
                     String::from("map view disabled")
                 };
+            }
+            KeyCode::Char('+') | KeyCode::Char('=') => {
+                // Zoom in (multiply by 1.414 ≈ √2, gives 2x zoom after 2 presses)
+                self.map_zoom_factor = (self.map_zoom_factor * 1.414).clamp(0.25, 8.0);
+                self.status = format!("zoom: {:.1}x", self.map_zoom_factor);
+            }
+            KeyCode::Char('-') | KeyCode::Char('_') => {
+                // Zoom out (divide by 1.414)
+                self.map_zoom_factor = (self.map_zoom_factor / 1.414).clamp(0.25, 8.0);
+                self.status = format!("zoom: {:.1}x", self.map_zoom_factor);
+            }
+            KeyCode::Char('0') => {
+                // Reset zoom to default
+                self.map_zoom_factor = 1.0;
+                self.status = String::from("zoom reset to 1.0x");
             }
             _ => {}
         }

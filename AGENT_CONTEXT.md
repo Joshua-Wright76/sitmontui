@@ -905,6 +905,38 @@ Gold 2945.30 🕐+0.42% ☀️+1.2% W-1.3% 🌙-5.4% | Silver 69.80 🕐+0.00% �
 
 ---
 
+### March 30, 2026 - Added Map Zoom Controls
+
+✅ **Added zoom in/out functionality using + and - keys**
+
+**Changes:**
+- Added `map_zoom_factor: f64` field to App struct
+- Zoom factor 1.0 = default view (45° longitude range, ~12.5% zoom)
+- Zoom factor 2.0 = zoomed in (22.5° longitude range)
+- Zoom factor 0.5 = zoomed out (90° longitude range)
+- Zoom range clamped between 0.25x and 8.0x
+
+**Key Bindings:**
+- `+` / `=` - Zoom in (multiply by ~1.414x per press)
+- `-` / `_` - Zoom out (divide by ~1.414x per press)
+- `0` - Reset zoom to 1.0x (default)
+
+**Status Messages:**
+- Shows current zoom level when zooming (e.g., "zoom: 2.0x")
+- Shows "zoom reset to 1.0x" when pressing 0
+
+**Files Changed:**
+- `src/app.rs` - Added `map_zoom_factor` field, key handlers for +/-, status updates
+- `src/ui.rs` - Modified `render_map()` to use `app.map_zoom_factor` when calculating longitude range
+
+**Implementation Details:**
+- Base longitude range is 45° at 1.0x zoom
+- Each zoom step multiplies/divides by √2 (~1.414), so 2 presses = 2x zoom
+- Latitude range automatically adjusts based on terminal aspect ratio
+- Works in all map views regardless of which column is focused
+
+---
+
 ### March 30, 2026 - Map Auto-Pan for All Panes
 
 ✅ **Map now auto-pans to selected items in all three panes (not just Feed)**
