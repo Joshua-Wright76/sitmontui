@@ -230,14 +230,28 @@ fn render_map(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject
         }
     }
 
-    // Determine map center based on selected event (only when Feed is focused)
-    let (center_lng, center_lat) = if app.focus == PaneFocus::Feed {
-        app.selected_object()
-            .filter(|obj| obj.lat != 0.0 && obj.lng != 0.0)
-            .map(|obj| (obj.lng, obj.lat))
-            .unwrap_or((20.0, 30.0)) // Default: Middle East
-    } else {
-        (20.0, 30.0) // Default: Middle East
+    // Determine map center based on selected item in the focused pane
+    let (center_lng, center_lat) = match app.focus {
+        PaneFocus::Feed => {
+            app.selected_object()
+                .filter(|obj| obj.lat != 0.0 && obj.lng != 0.0)
+                .map(|obj| (obj.lng, obj.lat))
+                .unwrap_or((20.0, 30.0)) // Default: Middle East
+        }
+        PaneFocus::Warships => {
+            app.sorted_warships()
+                .get(app.selected_idx_warships)
+                .filter(|ship| ship.lat != 0.0 && ship.lng != 0.0)
+                .map(|ship| (ship.lng, ship.lat))
+                .unwrap_or((20.0, 30.0)) // Default: Middle East
+        }
+        PaneFocus::Leaders => {
+            app.filtered_leaders()
+                .get(app.selected_idx_leaders)
+                .filter(|leader| leader.lat != 0.0 && leader.lng != 0.0)
+                .map(|leader| (leader.lng, leader.lat))
+                .unwrap_or((20.0, 30.0)) // Default: Middle East
+        }
     };
 
     // Calculate bounds with dynamic aspect ratio to prevent stretching
@@ -510,7 +524,7 @@ fn draw_coastlines(
     draw_segments(ctx, BORDER_SEGMENTS, border_color, 1);
 
     // Draw coastlines (thickest)
-    draw_segments(ctx, COASTLINE_SEGMENTS, coastline_color, 3);
+    draw_segments(ctx, COASTLINE_SEGMENTS, coastline_color, 2);
 
     // Draw lakes (medium thickness)
     draw_segments(ctx, LAKE_SEGMENTS, lake_color, 2);
@@ -1681,6 +1695,11 @@ fn calculate_scroll_offset(selected_idx: usize, heights: &[usize], window_height
         return 0;
     }
 
+    // If first item is selected, always start from beginning
+    if selected_idx == 0 {
+        return 0;
+    }
+
     // Calculate cumulative height up to the selected item
     let mut cumulative_height = 0usize;
     for i in 0..selected_idx {
@@ -1695,7 +1714,7 @@ fn calculate_scroll_offset(selected_idx: usize, heights: &[usize], window_height
     cumulative_height = 0;
 
     for (idx, &height) in heights.iter().enumerate() {
-        if cumulative_height > target_y {
+        if cumulative_height >= target_y {
             break;
         }
         scroll_offset = idx + 1;

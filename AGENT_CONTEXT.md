@@ -1,3 +1,7 @@
+**AGENT INSTRUCTION: Update this file when making ANY changes or adding features. Add new entries to the Progress Log below with today's date, describing what was changed and why. This ensures all agents have current context.**
+
+---
+
 Notes from the User {
 
 I want you to use Rust to make a TUI-based situation monitor, kinda like monitor-the-situation.com. First lets start with the design for the TUI-based World Map
@@ -874,6 +878,50 @@ Gold 2945.30 🕐+0.42% ☀️+1.2% W-1.3% 🌙-5.4% | Silver 69.80 🕐+0.00% �
 
 **Files Changed:**
 - `src/market_ticker.rs` - Updated percentage formatting to include emoji prefixes
+
+---
+
+### March 30, 2026 - Rotating Column Layout
+
+✅ **Changed column selection so the selected pane always rotates to the left position**
+
+**What Changed:**
+- When pressing `Tab`, `h`, or `l`, columns now rotate positions instead of just moving focus
+- Selected column always appears on the **left** side
+- Other columns shift right cyclically
+
+**Column Orders:**
+- **Feed focused:** Feed (left) | Warships | World Leaders
+- **Warships focused:** Warships (left) | World Leaders | Feed  
+- **Leaders focused:** World Leaders (left) | Feed | Warships
+
+**Implementation:**
+- Modified `draw()` function in `src/ui.rs` to use `match app.focus` for column layout
+- Each `PaneFocus` variant renders columns in a different order
+- Applied to both normal view (3 columns) and map view (2 columns)
+
+**Files Changed:**
+- `src/ui.rs` - Replaced if/else with match-based rotation logic
+
+---
+
+### March 30, 2026 - Map Auto-Pan for All Panes
+
+✅ **Map now auto-pans to selected items in all three panes (not just Feed)**
+
+**What Changed:**
+- Previously: Map only centered on Feed events; Warships/Leaders defaulted to Middle East
+- Now: Map centers on whichever item is selected in the currently focused (leftmost) pane
+
+**Implementation:**
+- Modified map center calculation in `render_map()` to use `match app.focus`
+- **Feed:** Centers on `app.selected_object()`
+- **Warships:** Centers on `app.filtered_warships()[app.selected_idx_warships]`
+- **Leaders:** Centers on `app.filtered_leaders()[app.selected_idx_leaders]`
+- All paths filter out invalid coordinates (0.0, 0.0) and fall back to Middle East default
+
+**Files Changed:**
+- `src/ui.rs` - Updated center calculation to handle all three `PaneFocus` variants
 
 ---
 
