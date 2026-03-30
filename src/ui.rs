@@ -30,29 +30,86 @@ pub fn draw(frame: &mut Frame<'_>, app: &mut App, ticker: &MarketTicker) {
     let objects = app.visible_objects();
     render_ticker(frame, chunks[0], ticker);
 
-    if app.is_map_view {
-        // Map view: feed on left (33%), map on right (67%)
-        let body = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(33), Constraint::Percentage(67)])
-            .split(chunks[1]);
+    // Rotating column layout - selected pane always on left
+    match app.focus {
+        PaneFocus::Feed => {
+            if app.is_map_view {
+                // Feed (left 33%) | Map (right 67%)
+                let body = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(33), Constraint::Percentage(67)])
+                    .split(chunks[1]);
 
-        render_feed(frame, body[0], app, objects);
-        render_map(frame, body[1], app, objects);
-    } else {
-        // Normal view: three columns
-        let body = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(33),
-                Constraint::Percentage(34),
-                Constraint::Percentage(33),
-            ])
-            .split(chunks[1]);
+                render_feed(frame, body[0], app, objects);
+                render_map(frame, body[1], app, objects);
+            } else {
+                // Feed | Warships | Leaders
+                let body = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([
+                        Constraint::Percentage(33),
+                        Constraint::Percentage(34),
+                        Constraint::Percentage(33),
+                    ])
+                    .split(chunks[1]);
 
-        render_feed(frame, body[0], app, objects);
-        render_warships(frame, body[1], app);
-        render_leaders(frame, body[2], app);
+                render_feed(frame, body[0], app, objects);
+                render_warships(frame, body[1], app);
+                render_leaders(frame, body[2], app);
+            }
+        }
+        PaneFocus::Warships => {
+            if app.is_map_view {
+                // Warships (left 33%) | Map (right 67%)
+                let body = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(33), Constraint::Percentage(67)])
+                    .split(chunks[1]);
+
+                render_warships(frame, body[0], app);
+                render_map(frame, body[1], app, objects);
+            } else {
+                // Warships | Leaders | Feed
+                let body = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([
+                        Constraint::Percentage(33),
+                        Constraint::Percentage(34),
+                        Constraint::Percentage(33),
+                    ])
+                    .split(chunks[1]);
+
+                render_warships(frame, body[0], app);
+                render_leaders(frame, body[1], app);
+                render_feed(frame, body[2], app, objects);
+            }
+        }
+        PaneFocus::Leaders => {
+            if app.is_map_view {
+                // Leaders (left 33%) | Map (right 67%)
+                let body = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(33), Constraint::Percentage(67)])
+                    .split(chunks[1]);
+
+                render_leaders(frame, body[0], app);
+                render_map(frame, body[1], app, objects);
+            } else {
+                // Leaders | Feed | Warships
+                let body = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([
+                        Constraint::Percentage(33),
+                        Constraint::Percentage(34),
+                        Constraint::Percentage(33),
+                    ])
+                    .split(chunks[1]);
+
+                render_leaders(frame, body[0], app);
+                render_feed(frame, body[1], app, objects);
+                render_warships(frame, body[2], app);
+            }
+        }
     }
 
     render_status(frame, chunks[2], app, objects);
