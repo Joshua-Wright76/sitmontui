@@ -484,9 +484,9 @@ fn render_mini_map(
     view_min_lat: f64,
     view_max_lat: f64,
 ) {
-    // Mini map size: 15x8 characters
-    let mini_width = 15u16;
-    let mini_height = 8u16;
+    // Mini map size: 22x6 characters (width +50%, height -25%)
+    let mini_width = 22u16;
+    let mini_height = 6u16;
 
     let mini_area = Rect {
         x: parent_area.x + parent_area.width - mini_width - 2,
