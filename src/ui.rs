@@ -259,7 +259,7 @@ fn render_map(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject
     let map_width = area.width as f64;
     let map_height = area.height as f64;
     let aspect_ratio = map_width / (map_height * 2.0); // Account for 2:1 character cell proportions
-    let lat_range = (lng_range / aspect_ratio).max(10.0); // Minimum 10° to prevent extreme zoom
+    let lat_range = lng_range / aspect_ratio;
     let min_lat = (center_lat - lat_range / 2.0).max(-90.0);
     let max_lat = (center_lat + lat_range / 2.0).min(90.0);
 
