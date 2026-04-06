@@ -1345,12 +1345,7 @@ fn render_leader_details(lines: &mut Vec<Line<'_>>, leader: &WorldLeader, width:
     ]));
 }
 
-fn render_status(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject]) {
-    let selected_text = app
-        .selected_object()
-        .map(|o| format!("selected: {}", o.label))
-        .unwrap_or_else(|| String::from("selected: none"));
-
+fn render_status(frame: &mut Frame<'_>, area: Rect, app: &App, _objects: &[MapObject]) {
     let filters = format!(
         "inc:{} ship:{} sev[1:{} 2:{} 3:{} 4:{}]",
         on_off(app.layer_visible(LayerId::Incidents)),
@@ -1362,34 +1357,38 @@ fn render_status(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObj
     );
 
     let pane_keys = match app.focus {
-        PaneFocus::Feed => "ACTIVE PANE: FEED  |  j/k move selection  |  h/l move focus",
-        PaneFocus::Warships => "ACTIVE PANE: WARSHIPS  |  j/k move selection  |  h/l move focus",
-        PaneFocus::Leaders => "ACTIVE PANE: LEADERS  |  j/k move selection  |  h/l move focus",
+        PaneFocus::Feed => "ACTIVE PANE: FEED  |  j/k or arrows: move  |  gg/G: top/bottom  |  h/l or tab: switch pane",
+        PaneFocus::Warships => "ACTIVE PANE: WARSHIPS  |  j/k or arrows: move  |  gg/G: top/bottom  |  h/l or tab: switch pane",
+        PaneFocus::Leaders => "ACTIVE PANE: LEADERS  |  j/k or arrows: move  |  gg/G: top/bottom  |  h/l or tab: switch pane",
     };
 
-    let nav_keys = if app.filter_panel_open {
-        "f: close | j/k: move | ENTER: toggle"
+    let nav_keys = if app.layer_panel_open {
+        "t/esc: close layers  |  j/k: move  |  space/enter: toggle  |  a: all  |  d: defaults"
+    } else if app.filter_panel_open {
+        "f/esc: close filters  |  j/k: move  |  space/enter: toggle"
+    } else if app.is_searching {
+        match app.search_mode {
+            SearchMode::Input => "/: search  |  type to filter  |  enter: results  |  esc: close",
+            SearchMode::Results => {
+                "/: search  |  j/k or arrows: move result  |  enter: jump  |  esc: close"
+            }
+        }
     } else if app.is_map_view {
-        "/: search | m: list view | ENTER: details | gg/G: top/bottom | 1-4: severity | q: quit"
+        "/: search  |  t: layers  |  m: list view  |  enter: details  |  +/-: zoom  |  0: reset zoom"
     } else {
-        "/: search | f: filters | m: map view | ENTER: details | gg/G: top/bottom | 1-4: severity | q: quit"
+        "/: search  |  f: filters  |  t: layers  |  m: map view  |  enter: details  |  1-4: severity"
+    };
+
+    let global_keys = if app.is_map_view {
+        "q/ctrl-c: quit  |  esc: close details  |  n/p: next/prev  |  h/l or shift-tab/tab: switch pane"
+    } else {
+        "q/ctrl-c: quit  |  esc: close details  |  n/p: next/prev  |  h/l or shift-tab/tab: switch pane"
     };
 
     let lines = vec![
-        Line::from(vec![
-            Span::styled("Status: ", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(&app.status),
-            Span::raw("  |  "),
-            Span::raw(selected_text),
-            Span::raw("  |  "),
-            Span::raw(format!("events: {}", objects.len())),
-            Span::raw("  |  "),
-            Span::raw(format!("warships: {}", app.snapshot.warships.len())),
-            Span::raw("  |  "),
-            Span::raw(format!("leaders: {}", app.snapshot.leaders.len())),
-        ]),
         Line::from(Span::styled(pane_keys, Style::default().fg(Color::Gray))),
         Line::from(Span::styled(nav_keys, Style::default().fg(Color::DarkGray))),
+        Line::from(Span::styled(global_keys, Style::default().fg(Color::Gray))),
         Line::from(filters),
     ];
 
