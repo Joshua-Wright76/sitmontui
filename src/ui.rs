@@ -246,7 +246,8 @@ fn render_map(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject
     let map_width = area.width as f64;
     let map_height = area.height as f64;
     let aspect_ratio = map_width / (map_height * 2.0);
-    let lat_range = lng_range / aspect_ratio;
+    let vertical_stretch = latitude_vertical_stretch(center_lat);
+    let lat_range = (lng_range / aspect_ratio) / vertical_stretch;
     let min_lat = (center_lat - lat_range / 2.0).max(-90.0);
     let max_lat = (center_lat + lat_range / 2.0).min(90.0);
     let lod = lod_for_zoom(app.map_zoom_factor);
@@ -366,6 +367,16 @@ fn get_event_emoji(category: Option<&str>) -> &'static str {
         }
         None => "📍",
     }
+}
+
+fn latitude_vertical_stretch(center_lat: f64) -> f64 {
+    let abs_lat = center_lat.abs();
+    if abs_lat <= 25.0 {
+        return 1.0;
+    }
+
+    let ramp = ((abs_lat - 25.0) / 45.0).clamp(0.0, 1.0);
+    1.0 + ramp * 0.28
 }
 
 /// Draw high-resolution coastlines from Natural Earth data
