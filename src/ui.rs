@@ -1370,9 +1370,9 @@ fn render_status(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObj
     let nav_keys = if app.filter_panel_open {
         "f: close | j/k: move | ENTER: toggle"
     } else if app.is_map_view {
-        "/: search | m: list view | ENTER: details | 1-4: severity | g: refresh | q: quit"
+        "/: search | m: list view | ENTER: details | gg/G: top/bottom | 1-4: severity | q: quit"
     } else {
-        "/: search | f: filters | m: map view | ENTER: details | 1-4: severity | g: refresh | q: quit"
+        "/: search | f: filters | m: map view | ENTER: details | gg/G: top/bottom | 1-4: severity | q: quit"
     };
 
     let lines = vec![

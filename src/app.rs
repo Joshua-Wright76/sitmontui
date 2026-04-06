@@ -128,6 +128,7 @@ pub struct App {
     pub is_map_view: bool,
     // Map zoom level (1.0 = default, 2.0 = 2x zoom in, 0.5 = zoom out)
     pub map_zoom_factor: f64,
+    pub pending_g_prefix: bool,
 }
 
 impl App {
@@ -178,6 +179,7 @@ impl App {
             market_ticker: Arc::new(Mutex::new(MarketTicker::new())),
             is_map_view: false,
             map_zoom_factor: 1.0,
+            pending_g_prefix: false,
         };
 
         // Initial cache build
@@ -293,6 +295,21 @@ impl App {
             PaneFocus::Warships => self.selected_idx_warships = idx,
             PaneFocus::Leaders => self.selected_idx_leaders = idx,
         }
+    }
+
+    fn jump_to_top(&mut self) {
+        self.set_current_selection(0);
+        self.expanded_idx = None;
+        self.status = format!("{}: top", self.focus.label());
+    }
+
+    fn jump_to_bottom(&mut self) {
+        let (_, len) = self.current_selection();
+        if len > 0 {
+            self.set_current_selection(len - 1);
+        }
+        self.expanded_idx = None;
+        self.status = format!("{}: bottom", self.focus.label());
     }
 
     pub fn start_search(&mut self) {
@@ -543,6 +560,14 @@ impl App {
             return;
         }
 
+        if self.pending_g_prefix {
+            self.pending_g_prefix = false;
+            if key.code == KeyCode::Char('g') {
+                self.jump_to_top();
+                return;
+            }
+        }
+
         if self.layer_panel_open {
             self.handle_layer_panel_key(key);
             return;
@@ -588,34 +613,8 @@ impl App {
             KeyCode::Char('p') => {
                 self.select_prev();
             }
-            KeyCode::Char('g') => match provider.fetch_snapshot() {
-                Ok(snapshot) => {
-                    let (updates, failures) = self.merge_snapshot(snapshot);
-                    self.next_refresh = Instant::now() + Duration::from_secs(30);
-                    self.invalidate_cache();
-
-                    // Build status message
-                    if failures.is_empty() {
-                        self.status = format!("manual refresh ({})", provider.name());
-                    } else {
-                        let fail_str = failures.join(", ");
-                        let update_str = if updates.is_empty() {
-                            "none".to_string()
-                        } else {
-                            updates.join(", ")
-                        };
-                        self.status = format!(
-                            "manual refresh partial: updated [{}], kept old [{}] ({})",
-                            update_str,
-                            fail_str,
-                            provider.name()
-                        );
-                    }
-                }
-                Err(err) => {
-                    self.status = format!("manual refresh failed: {err}");
-                }
-            },
+            KeyCode::Char('g') => self.pending_g_prefix = true,
+            KeyCode::Char('G') => self.jump_to_bottom(),
             KeyCode::Char('k') => self.select_prev(),
             KeyCode::Char('j') => self.select_next(),
             KeyCode::Up => self.select_prev(),
