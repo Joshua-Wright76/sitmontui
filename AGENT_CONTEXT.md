@@ -3,6 +3,27 @@
 - [x] Main library structure in place
 - [x] Tests configured and passing
 
+## Testing Flow
+### tmux-bridge Testing
+The project uses a two-pane tmux setup for testing:
+- **Pane 1 (Current)**: Where I (the agent) operate - editing code, running builds
+- **Pane 2**: The target testing pane where `sitmontui` runs
+
+**Using tmux-bridge:**
+```bash
+# Send commands to the testing pane
+tmux-bridge send "<command>"
+
+# Example: Run the TUI after building
+tmux-bridge send "./target/release/sitmontui"
+```
+
+**Workflow:**
+1. Edit code in Pane 1
+2. Build: `cargo build --release`
+3. Send test commands to Pane 2 via tmux-bridge
+4. Observe results in the other pane
+
 ## Completed
 1. **Initialized Rust Project**
    - Set up Cargo.toml with dependencies
