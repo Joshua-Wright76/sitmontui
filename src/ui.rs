@@ -262,6 +262,7 @@ fn render_map(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject
     let lat_range = lng_range / aspect_ratio;
     let min_lat = (center_lat - lat_range / 2.0).max(-90.0);
     let max_lat = (center_lat + lat_range / 2.0).min(90.0);
+    let lod = lod_for_zoom(app.map_zoom_factor);
 
     let canvas = Canvas::default()
         .x_bounds([min_lng, max_lng])
@@ -287,7 +288,7 @@ fn render_map(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject
             });
 
             // Draw high-resolution coastlines
-            draw_coastlines(ctx, min_lng, max_lng, min_lat, max_lat);
+            draw_coastlines(ctx, min_lng, max_lng, min_lat, max_lat, lod);
 
             // Draw event markers with emojis (bright yellow)
             for (lng, lat, category) in &event_markers {
@@ -390,19 +391,58 @@ fn get_event_emoji(category: Option<&str>) -> &'static str {
 }
 
 /// Draw high-resolution coastlines from Natural Earth data
+#[derive(Copy, Clone)]
+enum MapLod {
+    Low,
+    Medium,
+    High,
+}
+
+fn lod_for_zoom(map_zoom_factor: f64) -> MapLod {
+    if map_zoom_factor < 0.75 {
+        MapLod::Low
+    } else if map_zoom_factor < 2.5 {
+        MapLod::Medium
+    } else {
+        MapLod::High
+    }
+}
+
 fn draw_coastlines(
     ctx: &mut ratatui::widgets::canvas::Context<'_>,
     min_lng: f64,
     max_lng: f64,
     min_lat: f64,
     max_lat: f64,
+    lod: MapLod,
 ) {
-    use crate::coastline_data::{BORDER_SEGMENTS, COASTLINE_SEGMENTS, LAKE_SEGMENTS};
+    use crate::coastline_data::{
+        BORDER_SEGMENTS_HIGH, BORDER_SEGMENTS_LOW, BORDER_SEGMENTS_MEDIUM, COASTLINE_SEGMENTS_HIGH,
+        COASTLINE_SEGMENTS_LOW, COASTLINE_SEGMENTS_MEDIUM, LAKE_SEGMENTS_HIGH, LAKE_SEGMENTS_LOW,
+        LAKE_SEGMENTS_MEDIUM,
+    };
     use ratatui::widgets::canvas::Line;
 
     let coastline_color = Color::Rgb(100, 200, 255);
     let lake_color = Color::Rgb(80, 180, 240); // Slightly darker blue for lakes
     let border_color = Color::Rgb(120, 120, 120); // Subtle gray for borders
+    let (border_segments, coastline_segments, lake_segments) = match lod {
+        MapLod::Low => (
+            BORDER_SEGMENTS_LOW,
+            COASTLINE_SEGMENTS_LOW,
+            LAKE_SEGMENTS_LOW,
+        ),
+        MapLod::Medium => (
+            BORDER_SEGMENTS_MEDIUM,
+            COASTLINE_SEGMENTS_MEDIUM,
+            LAKE_SEGMENTS_MEDIUM,
+        ),
+        MapLod::High => (
+            BORDER_SEGMENTS_HIGH,
+            COASTLINE_SEGMENTS_HIGH,
+            LAKE_SEGMENTS_HIGH,
+        ),
+    };
 
     // Helper to draw segments with a given color
     let draw_segments = |ctx: &mut ratatui::widgets::canvas::Context<'_>,
@@ -466,13 +506,13 @@ fn draw_coastlines(
     };
 
     // Draw borders first (subtle, behind coastlines)
-    draw_segments(ctx, BORDER_SEGMENTS, border_color, 1);
+    draw_segments(ctx, border_segments, border_color, 1);
 
     // Draw coastlines (thickest)
-    draw_segments(ctx, COASTLINE_SEGMENTS, coastline_color, 2);
+    draw_segments(ctx, coastline_segments, coastline_color, 2);
 
     // Draw lakes (medium thickness)
-    draw_segments(ctx, LAKE_SEGMENTS, lake_color, 2);
+    draw_segments(ctx, lake_segments, lake_color, 2);
 }
 
 /// Render mini map in top-right corner showing global context
@@ -501,7 +541,7 @@ fn render_mini_map(
         .marker(Marker::Braille)
         .paint(|ctx| {
             // Draw world map coastlines (dimmed)
-            draw_coastlines(ctx, -180.0, 180.0, -90.0, 90.0);
+            draw_coastlines(ctx, -180.0, 180.0, -90.0, 90.0, MapLod::Low);
 
             // Draw viewport rectangle showing current view
             let border_color = Color::Rgb(255, 255, 100);

@@ -659,13 +659,14 @@ impl App {
                 };
             }
             KeyCode::Char('+') | KeyCode::Char('=') => {
-                // Zoom in (multiply by 1.414 ≈ √2, gives 2x zoom after 2 presses)
-                self.map_zoom_factor = (self.map_zoom_factor * 1.414).clamp(0.25, 8.0);
+                // Zoom in (multiply by 1.414 ≈ sqrt(2), gives 2x zoom after 2 presses).
+                // Raise the cap by four more zoom steps beyond the previous 8.0x limit.
+                self.map_zoom_factor = (self.map_zoom_factor * 1.414).clamp(0.25, 32.0);
                 self.status = format!("zoom: {:.1}x", self.map_zoom_factor);
             }
             KeyCode::Char('-') | KeyCode::Char('_') => {
                 // Zoom out (divide by 1.414)
-                self.map_zoom_factor = (self.map_zoom_factor / 1.414).clamp(0.25, 8.0);
+                self.map_zoom_factor = (self.map_zoom_factor / 1.414).clamp(0.25, 32.0);
                 self.status = format!("zoom: {:.1}x", self.map_zoom_factor);
             }
             KeyCode::Char('0') => {

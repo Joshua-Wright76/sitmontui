@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
 """
 Process Natural Earth Shapefiles and convert to Rust static arrays.
-Generates coastline_data.rs with detailed coastlines and lakes.
-HIGH QUALITY VERSION - preserves detail for accurate maps.
+Generates coastline_data.rs with low/medium/high detail map datasets.
 """
 
+import math
 import struct
 from pathlib import Path
+
+
+LOD_LEVELS = {
+    "LOW": {"coast": 0.8, "lake": 0.6, "border": 0.7},
+    "MEDIUM": {"coast": 3.0, "lake": 2.0, "border": 2.5},
+    "HIGH": {"coast": 15.0, "lake": 10.0, "border": 12.5},
+}
 
 
 def read_shp_header(f):
@@ -99,11 +106,11 @@ def simplify_line(points, scale_factor=3.0):
         dy = points[i][1] - points[i - 1][1]
         length += (dx * dx + dy * dy) ** 0.5
 
-    # Allocate points proportionally to length
-    allocated_points = int(length * scale_factor)
+    # Allocate points proportionally to length, without exceeding original detail.
+    allocated_points = max(2, min(len(points), int(length * scale_factor)))
 
     # If we have more points than allocated, downsample
-    if len(points) > allocated_points and allocated_points >= 2:
+    if len(points) > allocated_points:
         step = len(points) / allocated_points
         result = []
         for i in range(allocated_points):
@@ -119,13 +126,59 @@ def simplify_line(points, scale_factor=3.0):
     return points
 
 
+def dedupe_points(points):
+    """Remove consecutive duplicate points after simplification."""
+    if not points:
+        return points
+
+    deduped = [points[0]]
+    for point in points[1:]:
+        if point != deduped[-1]:
+            deduped.append(point)
+    return deduped
+
+
+def adaptive_min_points(scale_factor):
+    """Keep fewer tiny segments in low LOD, preserve more in higher LODs."""
+    return max(4, int(math.ceil(scale_factor * 3)))
+
+
+def build_lod_segments(segments, scale_factor, min_points):
+    """Simplify and filter segments for a specific LOD."""
+    lod_segments = []
+    total_points = 0
+
+    for seg in segments:
+        if len(seg) < min_points:
+            continue
+        simplified = dedupe_points(simplify_line(seg, scale_factor=scale_factor))
+        if len(simplified) >= 2:
+            lod_segments.append(simplified)
+            total_points += len(simplified)
+
+    return lod_segments, total_points
+
+
+def write_segment_constant(lines, doc_comment, const_name, segments):
+    """Append a Rust segment constant to the output."""
+    lines.append(f"/// {doc_comment}")
+    lines.append(f"pub const {const_name}: &[GeoSegment] = &[")
+    for seg in segments:
+        lines.append("    &[")
+        for x, y in seg:
+            lines.append(f"        ({x:.5}, {y:.5}),")
+        lines.append("    ],")
+    lines.append("];")
+    lines.append("")
+
+
 def filter_major_features(segments, min_points=20):
     """Filter to segments with enough points to be meaningful"""
     return [seg for seg in segments if len(seg) >= min_points]
 
 
 def generate_rust_code(coastlines, lakes, borders, output_path):
-    """Generate the Rust source file with HIGH QUALITY data"""
+    """Generate the Rust source file with fixed LOD map data."""
 
     # Keep all substantial coastlines
     print("\nProcessing coastlines...")
@@ -161,7 +214,7 @@ def generate_rust_code(coastlines, lakes, borders, output_path):
         "//   - Borders: ne_10m_admin_0_countries",
         "// License: Public Domain (Natural Earth)",
         "//",
-        "// HIGH QUALITY: Preserved detail for accurate geographic rendering",
+        "// Contains low, medium, and high detail datasets for zoom-based rendering",
         "",
         "/// A geographic segment as (longitude, latitude) points",
         "pub type GeoSegment = &'static [(f64, f64)];",
@@ -170,83 +223,62 @@ def generate_rust_code(coastlines, lakes, borders, output_path):
 
     total_points = 0
 
-    # Coastlines - keep all, simplify gently
-    lines.append("/// Coastline segments (detailed)")
-    lines.append("pub const COASTLINE_SEGMENTS: &[GeoSegment] = &[")
-    coast_count = 0
-    for seg in major_coastlines:
-        simplified = simplify_line(seg, scale_factor=3.0)
-        if len(simplified) >= 2:
-            lines.append("    &[")
-            for x, y in simplified:
-                lines.append(f"        ({x:.5}, {y:.5}),")
-                total_points += 1
-            lines.append("    ],")
-            coast_count += 1
-    lines.append("];")
-    lines.append("")
-    print(f"Coastlines: {coast_count} segments")
+    for lod_name, config in LOD_LEVELS.items():
+        coast_segments, coast_points = build_lod_segments(
+            major_coastlines,
+            scale_factor=config["coast"],
+            min_points=adaptive_min_points(config["coast"]),
+        )
+        lake_segments, lake_points = build_lod_segments(
+            major_lakes,
+            scale_factor=config["lake"],
+            min_points=adaptive_min_points(config["lake"]),
+        )
+        border_segments, border_points = build_lod_segments(
+            major_borders,
+            scale_factor=config["border"],
+            min_points=adaptive_min_points(config["border"]),
+        )
 
-    # Lakes
-    lines.append("/// Major lake segments (Great Lakes, Caspian Sea, etc.)")
-    lines.append("pub const LAKE_SEGMENTS: &[GeoSegment] = &[")
-    lake_pts = 0
-    for seg in major_lakes:
-        simplified = simplify_line(seg, scale_factor=2.0)
-        if len(simplified) >= 2:
-            lines.append("    &[")
-            for x, y in simplified:
-                lines.append(f"        ({x:.5}, {y:.5}),")
-                lake_pts += 1
-            lines.append("    ],")
-    lines.append("];")
-    lines.append("")
-    print(f"Lakes: {len(major_lakes)} segments, {lake_pts} points")
+        write_segment_constant(
+            lines,
+            f"Coastline segments ({lod_name.lower()} detail)",
+            f"COASTLINE_SEGMENTS_{lod_name}",
+            coast_segments,
+        )
+        write_segment_constant(
+            lines,
+            f"Major lake segments ({lod_name.lower()} detail)",
+            f"LAKE_SEGMENTS_{lod_name}",
+            lake_segments,
+        )
+        write_segment_constant(
+            lines,
+            f"Country border segments ({lod_name.lower()} detail)",
+            f"BORDER_SEGMENTS_{lod_name}",
+            border_segments,
+        )
 
-    total_points += lake_pts
-
-    # Borders - subtle, single line
-    lines.append("/// Country border segments")
-    lines.append("pub const BORDER_SEGMENTS: &[GeoSegment] = &[")
-    border_pts = 0
-    for seg in major_borders:
-        simplified = simplify_line(seg, scale_factor=2.5)
-        if len(simplified) >= 2:
-            lines.append("    &[")
-            for x, y in simplified:
-                lines.append(f"        ({x:.5}, {y:.5}),")
-                border_pts += 1
-            lines.append("    ],")
-    lines.append("];")
-    lines.append("")
-    print(f"Borders: {len(major_borders)} segments, {border_pts} points")
-
-    total_points += border_pts
-
-    # Helper function
-    lines.append("/// Get all geographic segments for drawing")
-    lines.append("pub fn all_segments() -> Vec<GeoSegment> {")
-    lines.append("    let mut all = Vec::new();")
-    lines.append("    all.extend(COASTLINE_SEGMENTS);")
-    lines.append("    all.extend(LAKE_SEGMENTS);")
-    lines.append("    all.extend(BORDER_SEGMENTS);")
-    lines.append("    all")
-    lines.append("}")
+        lod_total = coast_points + lake_points + border_points
+        total_points += lod_total
+        print(
+            f"{lod_name}: {len(coast_segments)} coastlines/{coast_points} pts, "
+            f"{len(lake_segments)} lakes/{lake_points} pts, "
+            f"{len(border_segments)} borders/{border_points} pts"
+        )
 
     with open(output_path, "w") as f:
         f.write("\n".join(lines))
 
     print(f"\nGenerated: {output_path}")
-    print(
-        f"Total: {total_points} points ({len(major_coastlines)} coastlines, {len(major_lakes)} lakes, {len(major_borders)} borders)"
-    )
+    print(f"Total emitted points across all LODs: {total_points}")
 
 
 if __name__ == "__main__":
     data_dir = Path("/Users/joshuawright/Projects/sitmontui/data/ne_raw")
     output_path = Path("/Users/joshuawright/Projects/sitmontui/src/coastline_data.rs")
 
-    print("Natural Earth Data Processor - HIGH QUALITY")
+    print("Natural Earth Data Processor - FIXED LOD")
     print("=" * 50)
 
     coastlines = parse_shapefile(data_dir / "ne_10m_coastline.shp")
