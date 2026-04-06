@@ -4,7 +4,7 @@ use ratatui::{
     symbols::Marker,
     text::{Line, Span},
     widgets::{
-        canvas::{Canvas, Line as CanvasLine},
+        canvas::{Canvas, Line as CanvasLine, Painter, Shape},
         Block, Borders, Clear, Paragraph, Wrap,
     },
     Frame,
@@ -192,18 +192,15 @@ fn render_map(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject
     let mut leader_markers: Vec<(f64, f64, &str)> = Vec::new();
     let mut selected_marker: Option<(f64, f64)> = None;
 
-    // Collect event markers from visible objects
     for (idx, obj) in objects.iter().enumerate() {
         let is_selected = idx == app.selected_idx && app.focus == PaneFocus::Feed;
         if is_selected {
             selected_marker = Some((obj.lng, obj.lat));
         } else {
-            let category = obj.metadata.category.as_deref();
-            event_markers.push((obj.lng, obj.lat, category));
+            event_markers.push((obj.lng, obj.lat, obj.metadata.category.as_deref()));
         }
     }
 
-    // Collect warship markers
     for (idx, ship) in app.filtered_warships().iter().enumerate() {
         let is_selected = idx == app.selected_idx_warships && app.focus == PaneFocus::Warships;
         if is_selected {
@@ -213,7 +210,6 @@ fn render_map(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject
         }
     }
 
-    // Collect leader markers
     for (idx, leader) in app.filtered_leaders().iter().enumerate() {
         let is_selected = idx == app.selected_idx_leaders && app.focus == PaneFocus::Leaders;
         if is_selected {
@@ -223,54 +219,44 @@ fn render_map(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject
         }
     }
 
-    // Determine map center based on selected item in the focused pane
     let (center_lng, center_lat) = match app.focus {
-        PaneFocus::Feed => {
-            app.selected_object()
-                .filter(|obj| obj.lat != 0.0 && obj.lng != 0.0)
-                .map(|obj| (obj.lng, obj.lat))
-                .unwrap_or((20.0, 30.0)) // Default: Middle East
-        }
-        PaneFocus::Warships => {
-            app.sorted_warships()
-                .get(app.selected_idx_warships)
-                .filter(|ship| ship.lat != 0.0 && ship.lng != 0.0)
-                .map(|ship| (ship.lng, ship.lat))
-                .unwrap_or((20.0, 30.0)) // Default: Middle East
-        }
-        PaneFocus::Leaders => {
-            app.filtered_leaders()
-                .get(app.selected_idx_leaders)
-                .filter(|leader| leader.lat != 0.0 && leader.lng != 0.0)
-                .map(|leader| (leader.lng, leader.lat))
-                .unwrap_or((20.0, 30.0)) // Default: Middle East
-        }
+        PaneFocus::Feed => app
+            .selected_object()
+            .filter(|obj| obj.lat != 0.0 && obj.lng != 0.0)
+            .map(|obj| (obj.lng, obj.lat))
+            .unwrap_or((20.0, 30.0)),
+        PaneFocus::Warships => app
+            .sorted_warships()
+            .get(app.selected_idx_warships)
+            .filter(|ship| ship.lat != 0.0 && ship.lng != 0.0)
+            .map(|ship| (ship.lng, ship.lat))
+            .unwrap_or((20.0, 30.0)),
+        PaneFocus::Leaders => app
+            .filtered_leaders()
+            .get(app.selected_idx_leaders)
+            .filter(|leader| leader.lat != 0.0 && leader.lng != 0.0)
+            .map(|leader| (leader.lng, leader.lat))
+            .unwrap_or((20.0, 30.0)),
     };
 
-    // Calculate bounds with dynamic aspect ratio to prevent stretching
-    // Base longitude range is 45° (~12.5% zoom at 1.0x), adjusted by zoom factor
     let base_lng_range = 45.0;
     let lng_range = base_lng_range / app.map_zoom_factor;
     let min_lng = (center_lng - lng_range / 2.0).max(-180.0);
     let max_lng = (center_lng + lng_range / 2.0).min(180.0);
-
-    // Calculate latitude range based on terminal aspect ratio
-    // Terminal characters are ~2:1 (width:height), so effective height is 2x the row count
     let map_width = area.width as f64;
     let map_height = area.height as f64;
-    let aspect_ratio = map_width / (map_height * 2.0); // Account for 2:1 character cell proportions
+    let aspect_ratio = map_width / (map_height * 2.0);
     let lat_range = lng_range / aspect_ratio;
     let min_lat = (center_lat - lat_range / 2.0).max(-90.0);
     let max_lat = (center_lat + lat_range / 2.0).min(90.0);
     let lod = lod_for_zoom(app.map_zoom_factor);
 
     let canvas = Canvas::default()
+        .marker(Marker::Braille)
         .x_bounds([min_lng, max_lng])
         .y_bounds([min_lat, max_lat])
         .paint(|ctx| {
-            // Draw center crosshairs first (so other elements overlay them)
             let crosshair_color = Color::Rgb(200, 200, 200);
-            // Horizontal line across center latitude
             ctx.draw(&CanvasLine {
                 x1: min_lng,
                 y1: center_lat,
@@ -278,7 +264,6 @@ fn render_map(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject
                 y2: center_lat,
                 color: crosshair_color,
             });
-            // Vertical line across center longitude
             ctx.draw(&CanvasLine {
                 x1: center_lng,
                 y1: min_lat,
@@ -287,10 +272,8 @@ fn render_map(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject
                 color: crosshair_color,
             });
 
-            // Draw high-resolution coastlines
             draw_coastlines(ctx, min_lng, max_lng, min_lat, max_lat, lod);
 
-            // Draw event markers with emojis (bright yellow)
             for (lng, lat, category) in &event_markers {
                 let emoji = get_event_emoji(*category);
                 ctx.print(
@@ -300,7 +283,6 @@ fn render_map(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject
                 );
             }
 
-            // Draw warship markers (bright cyan)
             for (lng, lat, _name) in &warship_markers {
                 ctx.print(
                     *lng,
@@ -309,7 +291,6 @@ fn render_map(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject
                 );
             }
 
-            // Draw leader markers (bright magenta)
             for (lng, lat, _name) in &leader_markers {
                 ctx.print(
                     *lng,
@@ -318,7 +299,6 @@ fn render_map(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject
                 );
             }
 
-            // Draw selected marker as white star
             if let Some((lng, lat)) = selected_marker {
                 ctx.print(
                     lng,
@@ -330,8 +310,6 @@ fn render_map(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObject
         .block(Block::default().title("World Map").borders(Borders::ALL));
 
     frame.render_widget(canvas, area);
-
-    // Draw mini map in top-right corner
     render_mini_map(frame, area, min_lng, max_lng, min_lat, max_lat);
 }
 
@@ -398,6 +376,76 @@ enum MapLod {
     High,
 }
 
+struct ThickPolyline<'a> {
+    points: &'a [(f64, f64)],
+    color: Color,
+    radius: i32,
+}
+
+impl Shape for ThickPolyline<'_> {
+    fn draw(&self, painter: &mut Painter<'_, '_>) {
+        if self.points.len() < 2 {
+            return;
+        }
+
+        for segment in self.points.windows(2) {
+            let [start, end] = [segment[0], segment[1]];
+            let (x1, y1) = match painter.get_point(start.0, start.1) {
+                Some(point) => point,
+                None => continue,
+            };
+            let (x2, y2) = match painter.get_point(end.0, end.1) {
+                Some(point) => point,
+                None => continue,
+            };
+
+            let dx = x2 as i32 - x1 as i32;
+            let dy = y2 as i32 - y1 as i32;
+            let steps = dx.abs().max(dy.abs()).max(1);
+
+            for step in 0..=steps {
+                let t = step as f64 / steps as f64;
+                let x = x1 as f64 + (x2 as f64 - x1 as f64) * t;
+                let y = y1 as f64 + (y2 as f64 - y1 as f64) * t;
+                stamp_brush(
+                    painter,
+                    x.round() as i32,
+                    y.round() as i32,
+                    self.radius,
+                    self.color,
+                );
+            }
+        }
+    }
+}
+
+fn stamp_brush(
+    painter: &mut Painter<'_, '_>,
+    center_x: i32,
+    center_y: i32,
+    radius: i32,
+    color: Color,
+) {
+    let radius_sq = radius * radius;
+
+    for dx in -radius..=radius {
+        for dy in -radius..=radius {
+            if dx * dx + dy * dy > radius_sq {
+                continue;
+            }
+
+            let x = center_x + dx;
+            let y = center_y + dy;
+
+            if x < 0 || y < 0 {
+                continue;
+            }
+
+            painter.paint(x as usize, y as usize, color);
+        }
+    }
+}
+
 fn lod_for_zoom(map_zoom_factor: f64) -> MapLod {
     if map_zoom_factor < 0.75 {
         MapLod::Low
@@ -421,7 +469,6 @@ fn draw_coastlines(
         COASTLINE_SEGMENTS_LOW, COASTLINE_SEGMENTS_MEDIUM, LAKE_SEGMENTS_HIGH, LAKE_SEGMENTS_LOW,
         LAKE_SEGMENTS_MEDIUM,
     };
-    use ratatui::widgets::canvas::Line;
 
     let coastline_color = Color::Rgb(100, 200, 255);
     let lake_color = Color::Rgb(80, 180, 240); // Slightly darker blue for lakes
@@ -448,71 +495,48 @@ fn draw_coastlines(
     let draw_segments = |ctx: &mut ratatui::widgets::canvas::Context<'_>,
                          segments: &[&[(f64, f64)]],
                          color: Color,
-                         thickness: usize| {
-        // Draw thick lines by rendering with offsets
-        let offsets: Vec<f64> = match thickness {
-            1 => vec![0.0],
-            2 => vec![0.0, 0.06],
-            _ => vec![0.0, 0.10, -0.10],
-        };
+                         radius: i32| {
+        for segment in segments {
+            let segment_in_view = segment.iter().any(|(lng, lat)| {
+                *lng >= min_lng && *lng <= max_lng && *lat >= min_lat && *lat <= max_lat
+            });
 
-        for offset in offsets {
-            for segment in segments {
-                // Skip segments completely outside view
-                let segment_in_view = segment.iter().any(|(lng, lat)| {
-                    let lng_off = lng + offset;
-                    let lat_off = lat + offset;
-                    lng_off >= min_lng
-                        && lng_off <= max_lng
-                        && lat_off >= min_lat
-                        && lat_off <= max_lat
-                });
-
-                if !segment_in_view {
-                    continue;
-                }
-
-                // Draw connected line segments
-                for i in 0..segment.len().saturating_sub(1) {
-                    let (lng1, lat1) = segment[i];
-                    let (lng2, lat2) = segment[i + 1];
-
-                    let lng1_off = lng1 + offset;
-                    let lat1_off = lat1 + offset;
-                    let lng2_off = lng2 + offset;
-                    let lat2_off = lat2 + offset;
-
-                    let p1_in_view = lng1_off >= min_lng
-                        && lng1_off <= max_lng
-                        && lat1_off >= min_lat
-                        && lat1_off <= max_lat;
-                    let p2_in_view = lng2_off >= min_lng
-                        && lng2_off <= max_lng
-                        && lat2_off >= min_lat
-                        && lat2_off <= max_lat;
-
-                    if p1_in_view || p2_in_view {
-                        ctx.draw(&Line {
-                            x1: lng1_off,
-                            y1: lat1_off,
-                            x2: lng2_off,
-                            y2: lat2_off,
-                            color,
-                        });
-                    }
-                }
+            if !segment_in_view {
+                continue;
             }
+
+            ctx.draw(&ThickPolyline {
+                points: segment,
+                color,
+                radius,
+            });
         }
     };
 
+    let border_radius = match lod {
+        MapLod::Low => 0,
+        MapLod::Medium => 0,
+        MapLod::High => 0,
+    };
+    let coastline_radius = match lod {
+        MapLod::Low => 0,
+        MapLod::Medium => 0,
+        MapLod::High => 0,
+    };
+    let lake_radius = match lod {
+        MapLod::Low => 0,
+        MapLod::Medium => 0,
+        MapLod::High => 0,
+    };
+
     // Draw borders first (subtle, behind coastlines)
-    draw_segments(ctx, border_segments, border_color, 1);
+    draw_segments(ctx, border_segments, border_color, border_radius);
 
-    // Draw coastlines (thickest)
-    draw_segments(ctx, coastline_segments, coastline_color, 2);
+    // Draw coastlines above borders with a slightly larger brush at high zoom.
+    draw_segments(ctx, coastline_segments, coastline_color, coastline_radius);
 
-    // Draw lakes (medium thickness)
-    draw_segments(ctx, lake_segments, lake_color, 2);
+    // Draw lakes last so inland water edges stay readable.
+    draw_segments(ctx, lake_segments, lake_color, lake_radius);
 }
 
 /// Render mini map in top-right corner showing global context
