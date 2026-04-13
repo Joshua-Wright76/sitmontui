@@ -629,10 +629,16 @@ fn render_feed(frame: &mut Frame<'_>, area: Rect, app: &App, objects: &[MapObjec
     let selected_idx = app.selected_idx.min(objects.len().saturating_sub(1));
     let is_expanded = app.expanded_idx == Some(selected_idx) && app.focus == PaneFocus::Feed;
 
-    // Calculate visible window to keep selected item in view
     let window_height = area.height.saturating_sub(2) as usize;
     let feed_heights = app.compute_feed_heights(area.width);
     let scroll_offset = calculate_scroll_offset(selected_idx, &feed_heights, window_height);
+
+    if scroll_offset > 0 {
+        lines.push(Line::from(Span::styled(
+            format!("↑ {} more above", scroll_offset),
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
 
     for (idx, object) in objects.iter().enumerate().skip(scroll_offset) {
         // Calculate space needed for this item
@@ -1026,6 +1032,13 @@ fn render_warships(frame: &mut Frame<'_>, area: Rect, app: &App) {
         Span::styled(position_str, Style::default().fg(Color::DarkGray)),
     ]));
 
+    if scroll_offset > 0 {
+        lines.push(Line::from(Span::styled(
+            format!("↑ {} more above", scroll_offset),
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+
     for (idx, ship) in warships.iter().enumerate().skip(scroll_offset) {
         let is_selected = idx == selected_idx && app.focus == PaneFocus::Warships;
 
@@ -1220,6 +1233,13 @@ fn render_leaders(frame: &mut Frame<'_>, area: Rect, app: &App) {
         Span::raw(format!("({} leaders)", leaders.len())),
         Span::styled(position_str, Style::default().fg(Color::DarkGray)),
     ]));
+
+    if scroll_offset > 0 {
+        lines.push(Line::from(Span::styled(
+            format!("↑ {} more above", scroll_offset),
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
 
     for (idx, leader) in leaders.iter().enumerate().skip(scroll_offset) {
         let is_selected = idx == selected_idx && app.focus == PaneFocus::Leaders;
