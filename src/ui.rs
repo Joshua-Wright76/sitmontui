@@ -1665,8 +1665,8 @@ fn calculate_scroll_offset(selected_idx: usize, heights: &[usize], window_height
         cumulative_height += heights[i];
     }
 
-    // Target scroll position to center the selected item in the window
-    let target_y = cumulative_height.saturating_sub(window_height / 2);
+    // Target scroll position to pin the selected item to the top of the window
+    let target_y = cumulative_height;
 
     // Find scroll_offset where cumulative height exceeds target_y
     let mut scroll_offset = 0;
