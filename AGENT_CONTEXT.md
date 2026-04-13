@@ -47,12 +47,13 @@ tmux-bridge send "./target/release/sitmontui"
    - Rebuilt the application
    - Ready for testing
 
+5. **Scroll UX Improvements**
+   - **Pinned-to-top scrolling**: Changed `calculate_scroll_offset()` in `src/ui.rs` to pin the selected item to the top of the column instead of centering it. This gives maximum space below the selected item to read expanded detail text.
+     - Code change: `let target_y = cumulative_height.saturating_sub(window_height / 2);` → `let target_y = cumulative_height;`
+   - **"More above" indicator**: Added `↑ N more above` indicator (dark gray) below the header in all three columns (Feed, Warships, Leaders) when items are scrolled out of view above the selected item. Only visible when `scroll_offset > 0`.
+
 ## Testing Results
 - TUI compiles successfully
 - Map view displays correctly
-- Need to verify zoom behavior with the fix applied
-
-## Next Steps
-- Test zoom functionality to confirm the fix works
-- Verify aspect ratio is preserved at all zoom levels
-- Document the fix in AGENT_CONTEXT.md
+- Zoom aspect ratio fix verified
+- Scroll pinning and "more above" indicator working
